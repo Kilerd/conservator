@@ -9,5 +9,5 @@ license = "MIT"
 
 [dependencies]
 async-trait = "0.1"
-sqlx = { version = "0.7",  features = ["runtime-tokio-native-tls", "postgres", "chrono", "bigdecimal"] }
+sqlx = { version = "0.7",  features = ["runtime-tokio-native-tls", "migrate", "postgres", "chrono", "bigdecimal"] }
 conservator_macro = { version = "0.1", path = "../conservator_macro" }

@@ -5,7 +5,7 @@ use proc_macro2::Span;
 use quote::{format_ident, quote};
 use strum::EnumString;
 use syn::spanned::Spanned;
-use syn::{parse2, Expr, FnArg, ItemFn, Lit, Pat, Stmt};
+use syn::{parse2, Expr, FnArg, Ident, ItemFn, Lit, Pat, Stmt};
 
 #[derive(Debug, EnumString)]
 #[strum(serialize_all = "snake_case")]
@@ -26,49 +26,95 @@ impl Action {
             .collect_vec();
         match self {
             Action::Fetch => {
-                quote! {
-                    ::sqlx::query_as(#sql)
-                    #(.bind(#fields))*
-                    .fetch_one(executor)
-                    .await
+                if cfg!(debug_assertions) {
+                    quote! {
+                        ::sqlx::query_as!(Self, #sql, #(#fields,)*)
+                            .fetch_one(executor)
+                            .await
+                    }
+                } else {
+                    quote! {
+                        ::sqlx::query_as(#sql)
+                        #(.bind(#fields))*
+                        .fetch_one(executor)
+                        .await
+                    }
                 }
             }
             Action::Exists => {
-                quote! {
-                    Ok(::sqlx::query_as::<_, (bool, )>(#sql)
-                    #(.bind(#fields))*
-                    .fetch_one(executor)
-                    .await?.0)
+                if cfg!(debug_assertions) {
+                    quote! {
+                        Ok(::sqlx::query_as!((bool, ), #sql, #(#fields,)*)
+                            .fetch_one(executor)
+                            .await?.0)
+                    }
+                } else {
+                    quote! {
+                        Ok(::sqlx::query_as::<_, (bool, )>(#sql)
+                        #(.bind(#fields))*
+                        .fetch_one(executor)
+                        .await?.0)
+                    }
                 }
             }
             Action::Find => {
-                quote! {
-                    ::sqlx::query_as(#sql)
-                    #(.bind(#fields))*
-                    .fetch_optional(executor)
-                    .await
+                if cfg!(debug_assertions) {
+                    quote! {
+                        ::sqlx::query_as!(Self, #sql, #(#fields,)*)
+                            .fetch_optional(executor)
+                            .await
+                    }
+                } else {
+                    quote! {
+                        ::sqlx::query_as(#sql)
+                        #(.bind(#fields))*
+                        .fetch_optional(executor)
+                        .await
+                    }
                 }
             }
             Action::FetchAll => {
-                quote! {
-                    ::sqlx::query_as(#sql)
-                    #(.bind(#fields))*
-                    .fetch_all(executor)
-                    .await
+                if cfg!(debug_assertions) {
+                    quote! {
+                        ::sqlx::query_as!(Self, #sql, #(#fields,)*)
+                            .fetch_all(executor)
+                            .await
+                    }
+                } else {
+                    quote! {
+                        ::sqlx::query_as(#sql)
+                        #(.bind(#fields))*
+                        .fetch_all(executor)
+                        .await
+                    }
                 }
             }
-            Action::Execute => quote! {
-                ::sqlx::query(#sql)
-                #(.bind(#fields))*
-                .execute(executor)
-                .await?;
-                Ok(())
-            },
+            Action::Execute => {
+                if cfg!(debug_assertions) {
+                    quote! {
+                        ::sqlx::query_as!((i32,), #sql, #(#fields,)*)
+                            .execute(executor)
+                            .await?;
+                        Ok(())
+                    }
+                } else {
+                    quote! {
+                        ::sqlx::query(#sql)
+                        #(.bind(#fields))*
+                        .execute(executor)
+                        .await?;
+                        Ok(())
+                    }
+                }
+            }
         }
     }
 }
 
-pub(crate) fn handler(args: proc_macro2::TokenStream, input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
+pub(crate) fn handler(
+    args: proc_macro2::TokenStream,
+    input: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
     let arg = args.to_string();
     let action = match Action::from_str(&arg) {
         Ok(action) => action,
@@ -150,6 +196,9 @@ mod test {
                     .await
             }
         };
-        assert_eq!(expected.to_string(), handler(args, input).unwrap().to_string());
+        assert_eq!(
+            expected.to_string(),
+            handler(args, input).unwrap().to_string()
+        );
     }
 }

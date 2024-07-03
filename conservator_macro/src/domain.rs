@@ -23,14 +23,20 @@ struct DomainFieldOpt {
 }
 
 fn find_by_id(table_name: &str, primary_field_name: &str) -> String {
-    format!("select * from {} where \"{}\" = $1", table_name, primary_field_name)
+    format!(
+        "select * from {} where \"{}\" = $1",
+        table_name, primary_field_name
+    )
 }
 fn fetch_all(table_name: &str) -> String {
     format!("select * from {}", table_name)
 }
 
 fn delete_by_pk(table_name: &str, primary_field_name: &str) -> String {
-    format!("delete from {} where \"{}\" = $1", table_name, primary_field_name)
+    format!(
+        "delete from {} where \"{}\" = $1",
+        table_name, primary_field_name
+    )
 }
 fn update_sql(table_name: &str, primary_field_name: &str, non_pk_fields: &[syn::Ident]) -> String {
     let set_part = non_pk_fields
@@ -47,7 +53,9 @@ fn update_sql(table_name: &str, primary_field_name: &str, non_pk_fields: &[syn::
     )
 }
 
-pub(crate) fn handler(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
+pub(crate) fn handler(
+    input: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
     let x1 = parse2::<DeriveInput>(input).unwrap();
     let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1).unwrap();
 
@@ -59,11 +67,18 @@ pub(crate) fn handler(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
         .filter_map(|field| field.ident.clone())
         .collect_vec();
 
-    let mut pk_count = fields.fields.into_iter().filter(|field| field.primary_key == Some(true)).collect_vec();
+    let mut pk_count = fields
+        .fields
+        .into_iter()
+        .filter(|field| field.primary_key == Some(true))
+        .collect_vec();
 
     let pk_field = match pk_count.len() {
         0 => {
-            return Err((x1.span(), "missing primary key, using #[domain(primary_key)] to identify"));
+            return Err((
+                x1.span(),
+                "missing primary key, using #[domain(primary_key)] to identify",
+            ));
         }
         1 => pk_count.pop().unwrap(),
         _ => {
@@ -84,7 +99,7 @@ pub(crate) fn handler(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
 
     Ok(quote! {
 
-        #[async_trait::async_trait]
+        #[::async_trait::async_trait]
         impl ::conservator::Domain for #ident {
             const PK_FIELD_NAME: &'static str = #pk_field_name;
             const TABLE_NAME: &'static str = #table_name;
@@ -163,7 +178,7 @@ mod test {
         };
         let expected_output = quote! {
 
-            #[async_trait::async_trait]
+            #[::async_trait::async_trait]
             impl ::conservator::Domain for UserEntity {
                 const PK_FIELD_NAME: &'static str = "id";
                 const TABLE_NAME: &'static str = "users";
