@@ -141,6 +141,8 @@ pub(crate) fn handler(
         })
         .collect();
     let output = &method.sig.output;
+
+    dbg!(&output);
     let body = &method.block;
     let body: Vec<proc_macro2::TokenStream> = body
         .stmts
@@ -165,7 +167,7 @@ pub(crate) fn handler(
         .collect();
 
     Ok(quote! {
-        #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs) #output {
+        #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs, executor: E) #output {
             #(#body )*
         }
     })
