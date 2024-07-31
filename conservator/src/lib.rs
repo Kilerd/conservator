@@ -6,7 +6,7 @@ pub use sqlx::postgres::PgPoolOptions;
 pub use sqlx::FromRow;
 pub use sqlx::{Pool, Postgres};
 
-pub type ExistsRow = (i32, );
+pub type SingleNumberRow = (i32,);
 
 #[async_trait]
 pub trait Domain: Sized {
