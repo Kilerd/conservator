@@ -75,14 +75,14 @@ impl Action {
                     quote! {
                         Ok(::sqlx::query_as!(#fetch_model, #exist_wrapper_sql, #(#fields,)*)
                             .fetch_one(executor)
-                            .await?.exists)
+                            .await?.exists.unwrap_or(false))
                     }
                 } else {
                     quote! {
                         Ok(::sqlx::query_as::<_, #fetch_model>(#exist_wrapper_sql)
                         #(.bind(#fields))*
                         .fetch_one(executor)
-                        .await?.exists)
+                        .await?.exists.unwrap_or(false))
                     }
                 }
             }
