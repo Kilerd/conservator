@@ -10,7 +10,7 @@ pub type SingleNumberRow = (i32,);
 
 #[derive(FromRow)]
 pub struct ExistsRow {
-    exist: bool,
+    pub exists: bool,
 }
 
 #[async_trait]
