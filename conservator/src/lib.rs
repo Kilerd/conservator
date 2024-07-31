@@ -8,6 +8,11 @@ pub use sqlx::{Pool, Postgres};
 
 pub type SingleNumberRow = (i32,);
 
+#[derive(FromRow)]
+pub struct ExistsRow {
+    exist: bool,
+}
+
 #[async_trait]
 pub trait Domain: Sized {
     const PK_FIELD_NAME: &'static str;

@@ -70,18 +70,19 @@ impl Action {
                 }
             }
             Action::Exists => {
+                let exist_wrapper_sql = format!("select exists({})", sql);
                 if cfg!(debug_assertions) {
                     quote! {
-                        Ok(::sqlx::query_as!(#fetch_model, #sql, #(#fields,)*)
+                        Ok(::sqlx::query_as!(#fetch_model, #exist_wrapper_sql, #(#fields,)*)
                             .fetch_one(executor)
-                            .await?.0)
+                            .await?.exists)
                     }
                 } else {
                     quote! {
-                        Ok(::sqlx::query_as::<_, #fetch_model>(#sql)
+                        Ok(::sqlx::query_as::<_, #fetch_model>(#exist_wrapper_sql)
                         #(.bind(#fields))*
                         .fetch_one(executor)
-                        .await?.0)
+                        .await?.exists)
                     }
                 }
             }
@@ -149,7 +150,7 @@ impl Action {
             }
             ReturnType::Type(_, inner) => match self {
                 Action::Fetch => Ok((quote! {#inner}, quote! { #inner })),
-                Action::Exists => Ok((quote! {::conservator::SingleNumberRow}, quote! { bool })),
+                Action::Exists => Ok((quote! {::conservator::ExistsRow}, quote! { bool })),
                 Action::Find => {
                     let Some(inner_type) = extract_inner_type(inner, "Option") else {
                         return Err((span, "find method need a option type"));
