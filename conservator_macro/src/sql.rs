@@ -149,7 +149,7 @@ impl Action {
             }
             ReturnType::Type(_, inner) => match self {
                 Action::Fetch => Ok((quote! {#inner}, quote! { #inner })),
-                Action::Exists => Ok((quote! {(i32, )}, quote! { bool })),
+                Action::Exists => Ok((quote! {::conservator::SingleNumberRow}, quote! { bool })),
                 Action::Find => {
                     let Some(inner_type) = extract_inner_type(inner, "Option") else {
                         return Err((span, "find method need a option type"));
@@ -162,7 +162,7 @@ impl Action {
                     };
                     Ok((quote! {#inner_type}, quote! { #inner }))
                 }
-                Action::Execute => Ok((quote! { (i32, ) }, quote! { () })),
+                Action::Execute => Ok((quote! { ::conservator::SingleNumberRow }, quote! { () })),
             },
         }
     }

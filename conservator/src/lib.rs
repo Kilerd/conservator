@@ -6,6 +6,8 @@ pub use sqlx::postgres::PgPoolOptions;
 pub use sqlx::FromRow;
 pub use sqlx::{Pool, Postgres};
 
+pub type ExistsRow = (i32, );
+
 #[async_trait]
 pub trait Domain: Sized {
     const PK_FIELD_NAME: &'static str;
