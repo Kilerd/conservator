@@ -233,8 +233,13 @@ pub(crate) fn handler(
         })
         .collect();
 
+    let inputs = if inputs.is_empty() {
+        quote! {}
+    } else {
+        quote! {#inputs,}
+    };
     let ret = quote! {
-        #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs, executor: E) -> Result<#return_type, ::sqlx::Error> {
+        #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs executor: E) -> Result<#return_type, ::sqlx::Error> {
             #(#body )*
         }
     };
