@@ -42,7 +42,7 @@ use conservator::sql;
 impl UserService {
 
     #[sql(find)]
-    pub async fn find_user<E>(email: &str, executor: E) -> Result<Option<UserEntity>, Error> {
+    pub async fn find_user<>(email: &str) -> Option<UserEntity> {
         "select * from users where email = :email"
     }
 }
