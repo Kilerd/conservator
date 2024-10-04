@@ -243,7 +243,6 @@ pub(crate) fn handler(
             #(#body )*
         }
     };
-    println!("{}", &ret);
     Ok(ret)
 }
 
