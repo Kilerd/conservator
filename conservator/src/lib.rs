@@ -76,3 +76,18 @@ pub trait Creatable: Send {
         <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
     >;
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn compile_fail() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/fail/*.rs");
+    }
+
+    #[test]
+    fn compile_pass() {
+        let t = trybuild::TestCases::new();
+        t.pass("tests/pass/*.rs");
+    }
+}

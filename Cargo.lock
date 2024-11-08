@@ -206,18 +206,21 @@ dependencies = [
  "async-trait",
  "conservator_macro",
  "sqlx",
+ "trybuild",
 ]
 
 [[package]]
 name = "conservator_macro"
 version = "0.1.9"
 dependencies = [
+ "async-trait",
  "darling",
  "itertools 0.10.5",
  "proc-macro-error",
  "proc-macro2",
  "quote",
  "regex",
+ "sqlx",
  "strum",
  "syn 1.0.109",
  "trybuild",

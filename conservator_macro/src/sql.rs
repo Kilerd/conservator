@@ -8,8 +8,8 @@ use regex::Regex;
 use strum::EnumString;
 use syn::spanned::Spanned;
 use syn::{
-    parse2, AngleBracketedGenericArguments, Expr, FnArg, Ident, ItemFn, Lit, Pat, PathArguments,
-    ReturnType, Stmt, Type,
+    parse2, AngleBracketedGenericArguments, Expr, ItemFn, Lit, PathArguments, ReturnType, Stmt,
+    Type,
 };
 
 fn extract_inner_type<'a>(ty: &'a Type, wrapper: &'a str) -> Option<&'a Type> {
@@ -188,16 +188,7 @@ pub(crate) fn handler(
     let vis = &method.vis;
     let ident = &method.sig.ident;
     let inputs = &method.sig.inputs;
-    let fields: Vec<String> = inputs
-        .iter()
-        .filter_map(|it| match it {
-            FnArg::Receiver(_) => None,
-            FnArg::Typed(typed) => match &*typed.pat {
-                Pat::Ident(ident) => Some(ident.ident.to_string()),
-                _ => None,
-            },
-        })
-        .collect();
+
     let output = &method.sig.output;
 
     let (fetch_model, return_type) = action.extract_and_build_ret_type(&output)?;
@@ -236,7 +227,11 @@ pub(crate) fn handler(
     let inputs = if inputs.is_empty() {
         quote! {}
     } else {
-        quote! {#inputs,}
+        if inputs.trailing_punct() {
+            quote! { #inputs}
+        } else {
+            quote! { #inputs,}
+        }
     };
     let ret = quote! {
         #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs executor: E) -> Result<#return_type, ::sqlx::Error> {
@@ -265,9 +260,8 @@ mod test {
                 email: &str,
                 executor: E
             ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                ::sqlx::query_as("select * from users where email = $1")
-                    .bind(email)
-                    .fetch_one(executor)
+                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", email,)
+                    .fetch_optional(executor)
                     .await
             }
         };
@@ -294,9 +288,60 @@ mod test {
                 executor: E
             ) -> Result<Option<UserEntity>, ::sqlx::Error> {
                  let id = self.id;
-                ::sqlx::query_as("select * from users where email = $1")
-                    .bind(id)
-                    .fetch_one(executor)
+                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
+                    .fetch_optional(executor)
+                    .await
+            }
+        };
+        assert_eq!(
+            expected.to_string(),
+            handler(args, input).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn args_with_tailing_comma() {
+        use quote::quote;
+        let args = quote! { find };
+        let input = quote! {
+            pub async fn find_user(id: i32, ) -> Option<UserEntity> {
+                "select * from users where email = :id"
+            }
+        };
+
+        let expected = quote! {
+            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+                id: i32,
+                executor: E
+            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
+                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
+                    .fetch_optional(executor)
+                    .await
+            }
+        };
+        assert_eq!(
+            expected.to_string(),
+            handler(args, input).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn args_without_tailing_comma() {
+        use quote::quote;
+        let args = quote! { find };
+        let input = quote! {
+            pub async fn find_user(id: i32 ) -> Option<UserEntity> {
+                "select * from users where email = :id"
+            }
+        };
+
+        let expected = quote! {
+            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+                id: i32,
+                executor: E
+            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
+                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
+                    .fetch_optional(executor)
                     .await
             }
         };

@@ -102,7 +102,12 @@ struct FieldFactor {
 
 impl FieldFactor {
     fn as_sql_where(&self) -> String {
-        format!("{} {} ${}", self.field, self.factor.as_sql_factor(), self.index + 1)
+        format!(
+            "{} {} ${}",
+            self.field,
+            self.factor.as_sql_factor(),
+            self.index + 1
+        )
     }
 }
 
@@ -136,16 +141,24 @@ pub(crate) fn handler(input: proc_macro2::TokenStream) -> proc_macro2::TokenStre
     }
 }
 
-pub(crate) fn handler_magic_function(header: &Box<Type>, method: &ImplItemMethod) -> proc_macro2::TokenStream {
+pub(crate) fn handler_magic_function(
+    header: &Box<Type>,
+    method: &ImplItemMethod,
+) -> proc_macro2::TokenStream {
     let vis = &method.vis;
     let ident = &method.sig.ident;
     let ident_name = method.sig.ident.to_string();
-    let action_naming_convention = regex::Regex::new("^(?P<action>fetch|fetch_all|exists|find)_by").expect("invalid regex");
-    let action_caps = action_naming_convention.captures(&ident_name).expect("action not found");
+    let action_naming_convention =
+        regex::Regex::new("^(?P<action>fetch|fetch_all|exists|find)_by").expect("invalid regex");
+    let action_caps = action_naming_convention
+        .captures(&ident_name)
+        .expect("action not found");
 
     let action_name = action_caps.name("action").map_or("", |m| m.as_str());
     let action: Action = Action::from_str(action_name).unwrap();
-    let field_naming_convention = regex::Regex::new("__(?P<field>[^__]+)__(?P<factor>is|equals|gt|lt|in)?").expect("invalid regex");
+    let field_naming_convention =
+        regex::Regex::new("__(?P<field>[^__]+)__(?P<factor>is|equals|gt|lt|in)?")
+            .expect("invalid regex");
     let field_factors = field_naming_convention
         .captures_iter(&ident_name)
         .into_iter()
@@ -161,7 +174,10 @@ pub(crate) fn handler_magic_function(header: &Box<Type>, method: &ImplItemMethod
         })
         .collect::<Vec<_>>();
 
-    let sql_where = field_factors.iter().map(|it| it.as_sql_where()).join(" and ");
+    let sql_where = field_factors
+        .iter()
+        .map(|it| it.as_sql_where())
+        .join(" and ");
     let ident_list = field_factors
         .iter()
         .map(|it| {
