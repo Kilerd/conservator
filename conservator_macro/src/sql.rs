@@ -201,13 +201,12 @@ pub(crate) fn handler(
             Stmt::Expr(Expr::Lit(expr_lit)) => match &expr_lit.lit {
                 Lit::Str(lit_str) => {
                     let mut sql = lit_str.value();
-                    let re = Regex::new(r":\w+").unwrap();
-                    let matches: HashSet<&str> =
-                        re.find_iter(&sql).map(|mat| mat.as_str()).collect();
-                    let matched_fields = matches
-                        .into_iter()
-                        .map(|it| it.strip_prefix(':').unwrap().to_string())
-                        .collect_vec();
+                    let re = Regex::new(r"[^:]:(\w+)").unwrap();
+                    let matched: HashSet<String> = re
+                        .captures_iter(&sql)
+                        .map(|mat| mat[1].to_string())
+                        .collect();
+                    let matched_fields = matched.into_iter().collect_vec();
 
                     matched_fields.iter().enumerate().for_each(|(idx, field)| {
                         sql = sql.replace(&format!(":{}", field), &format!("${}", idx + 1));
@@ -341,6 +340,32 @@ mod test {
                 executor: E
             ) -> Result<Option<UserEntity>, ::sqlx::Error> {
                 ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
+                    .fetch_optional(executor)
+                    .await
+            }
+        };
+        assert_eq!(
+            expected.to_string(),
+            handler(args, input).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn should_work_with_pg_double_mark() {
+        use quote::quote;
+        let args = quote! { find };
+        let input = quote! {
+            pub async fn find_user() -> Option<UserEntity> {
+                "select * from users where datetime + '14 days'::interval > now()"
+            }
+        };
+
+        let expected = quote! {
+            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+
+                executor: E
+            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
+                ::sqlx::query_as!(UserEntity, "select * from users where datetime + '14 days'::interval > now()",)
                     .fetch_optional(executor)
                     .await
             }
