@@ -36,7 +36,9 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
             .map(|it| it.0)
             .map(|it| format!("${}", it + 1))
             .join(",");
-        let insert_sql = format!("({}) VALUES ({})", field_list, param_list);
+        
+        let columns = format!("({})", field_list);
+        let insert_sql = format!("({})", param_list);
 
         let bind_list = fields.iter().map(|it| {
             quote! { .bind(self. #it)}
@@ -44,6 +46,11 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
 
         quote! {
             impl ::conservator::Creatable for #ident {
+
+                fn get_columns(&self) -> &str {
+                    #columns
+                }
+
                 fn get_insert_sql(&self) -> &str {
                     #insert_sql
                 }

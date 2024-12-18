@@ -48,6 +48,11 @@ pub trait Domain: Sized {
         executor: E,
     ) -> Result<Self, ::sqlx::Error>;
 
+    async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: Creatable>(
+        data: &'data [C],
+        executor: E,
+    ) -> Result<(), ::sqlx::Error>;
+
     async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         pk: &Self::PrimaryKey,
         executor: E,
@@ -60,6 +65,7 @@ pub trait Domain: Sized {
 }
 
 pub trait Creatable: Send {
+    fn get_columns(&self) -> &str;
     fn get_insert_sql(&self) -> &str;
     fn build<'q, O>(
         self,

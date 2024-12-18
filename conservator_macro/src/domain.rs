@@ -128,11 +128,28 @@ pub(crate) fn handler(
             async fn create<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
                 data: C, executor: E
             ) -> Result<Self, ::sqlx::Error> {
-                let sql = format!("INSERT INTO {} {} returning *", #table_name, data.get_insert_sql());
+                let sql = format!("INSERT INTO {} {} VALUES {} returning *", #table_name, data.get_columns(), data.get_insert_sql());
                 let mut ex = sqlx::query_as(&sql);
                 data.build(ex)
                     .fetch_one(executor)
                     .await
+            }
+            async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
+                data: &'data [C],
+                executor: E,
+            ) -> Result<(), ::sqlx::Error> {
+                if data.is_empty() {
+                    return Ok(());
+                }
+                let columns = data[0].get_columns();
+                let insert_sql = data.iter().map(|it| it.get_insert_sql()).join(",");
+                let sql = format!("INSERT INTO {} {} VALUES {}", #table_name, columns, insert_sql);
+                let mut ex = sqlx::query(&sql);
+                for item in data {
+                    ex = item.build(ex);
+                }
+                ex.execute(executor).await?;
+                Ok(())
             }
             async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E,) ->Result<(), ::sqlx::Error> {
                 sqlx::query(#delete_by_pk)
@@ -221,12 +238,30 @@ mod test {
                     executor: E
                 ) -> Result<Self, ::sqlx::Error> {
                     let sql = format!(
-                        "INSERT INTO {} {} returning *",
+                        "INSERT INTO {} {} VALUES {} returning *",
                         "users",
+                        data.get_columns(),
                         data.get_insert_sql()
                     );
                     let mut ex = sqlx::query_as(&sql);
                     data.build(ex).fetch_one(executor).await
+                }
+                async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
+                    data: &'data [C],
+                    executor: E,
+                ) -> Result<(), ::sqlx::Error> {
+                    if data.is_empty() {
+                        return Ok(());
+                    }
+                    let columns = data[0].get_columns();
+                    let insert_sql = data.iter().map(|it| it.get_insert_sql()).join(",");
+                    let sql = format!("INSERT INTO {} {} VALUES {}", "users", columns, insert_sql);
+                    let mut ex = sqlx::query(&sql);
+                    for item in data {
+                        ex = item.build(ex);
+                    }
+                    ex.execute(executor).await?;
+                    Ok(())
                 }
 
                 async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E,) ->Result<(), ::sqlx::Error> {
