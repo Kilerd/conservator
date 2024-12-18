@@ -142,7 +142,13 @@ pub(crate) fn handler(
                     return Ok(());
                 }
                 let columns = data[0].get_columns();
-                let insert_sql = data.iter().map(|it| it.get_insert_sql()).join(",");
+                let mut insert_sql = String::new();
+                for (i, item) in data.iter().enumerate() {
+                    if i > 0 {
+                        insert_sql.push_str(",");
+                    }
+                    insert_sql.push_str(item.get_insert_sql());
+                }
                 let sql = format!("INSERT INTO {} {} VALUES {}", #table_name, columns, insert_sql);
                 let mut ex = sqlx::query(&sql);
                 for item in data {
