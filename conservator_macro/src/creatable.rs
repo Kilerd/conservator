@@ -39,8 +39,13 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
         
         let columns = format!("({})", field_list);
         let insert_sql = format!("({})", param_list);
+        
+        let fields_len = fields.len();
 
-        let bind_list = fields.iter().map(|it| {
+        let bind_list_for_query_as = fields.iter().map(|it| {
+            quote! { .bind(self. #it)}
+        });
+        let bind_list_for_query = fields.iter().map(|it| {
             quote! { .bind(self. #it)}
         });
 
@@ -54,12 +59,31 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
                 fn get_insert_sql(&self) -> &str {
                     #insert_sql
                 }
-                fn build<'q, O>(
+                fn get_batch_insert_sql(&self, idx: usize) -> String {
+                    let mut ret = String::new();
+                    ret.push_str("(");
+                    for i in 0..#fields_len {
+                        if i > 0 {
+                            ret.push_str(",");
+                        }
+                        ret.push_str(&format!("${}", idx * #fields_len + i + 1));
+                    }
+                    ret.push_str(")");
+                    ret
+                }
+                fn build_for_query_as<'q, O>(
                     self,
                     e: ::sqlx::query::QueryAs<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,>,
                 ) -> ::sqlx::query::QueryAs<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,> {
                     e
-                    #(#bind_list)*
+                    #(#bind_list_for_query_as)*
+                }
+                fn build_for_query<'q>(
+                    self,
+                    e: ::sqlx::query::Query<'q, ::sqlx::Postgres, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments>,
+                ) -> ::sqlx::query::Query<'q, ::sqlx::Postgres, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments> {
+                    e
+                    #(#bind_list_for_query)*
                 }
             }
         }

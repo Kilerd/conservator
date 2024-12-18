@@ -49,7 +49,7 @@ pub trait Domain: Sized {
     ) -> Result<Self, ::sqlx::Error>;
 
     async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: Creatable>(
-        data: &'data [C],
+        data: Vec<C>,
         executor: E,
     ) -> Result<(), ::sqlx::Error>;
 
@@ -67,7 +67,8 @@ pub trait Domain: Sized {
 pub trait Creatable: Send {
     fn get_columns(&self) -> &str;
     fn get_insert_sql(&self) -> &str;
-    fn build<'q, O>(
+    fn get_batch_insert_sql(&self, idx: usize) -> String;
+    fn build_for_query_as<'q, O>(
         self,
         e: ::sqlx::query::QueryAs<
             'q,
@@ -79,6 +80,18 @@ pub trait Creatable: Send {
         'q,
         ::sqlx::Postgres,
         O,
+        <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
+    >;
+    fn build_for_query<'q>(
+        self,
+        e: ::sqlx::query::Query<
+            'q,
+            ::sqlx::Postgres,
+            <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
+        >,
+    ) -> ::sqlx::query::Query<
+        'q,
+        ::sqlx::Postgres,
         <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
     >;
 }
