@@ -326,6 +326,36 @@ impl Expression {
     }
 }
 
+// 实现 & 运算符，等价于 and()
+impl std::ops::BitAnd for Expression {
+    type Output = Expression;
+
+    /// 使用 `&` 运算符组合两个表达式（AND）
+    /// 
+    /// ```ignore
+    /// let expr = id.eq(1) & name.like("John%");
+    /// // 等价于 id.eq(1).and(name.like("John%"))
+    /// ```
+    fn bitand(self, rhs: Self) -> Self::Output {
+        self.and(rhs)
+    }
+}
+
+// 实现 | 运算符，等价于 or()
+impl std::ops::BitOr for Expression {
+    type Output = Expression;
+
+    /// 使用 `|` 运算符组合两个表达式（OR）
+    /// 
+    /// ```ignore
+    /// let expr = id.eq(1) | email.is_null();
+    /// // 等价于 id.eq(1).or(email.is_null())
+    /// ```
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.or(rhs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,5 +501,47 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "id");
         assert_eq!(fields[1].name, "name");
+    }
+
+    #[test]
+    fn test_bitand_operator() {
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let name_like = Expression::comparison(
+            name_field(),
+            Operator::Like,
+            Value::String("John%".to_string()),
+        );
+        // 使用 & 运算符
+        let expr = id_eq & name_like;
+        let result = expr.build();
+        assert_eq!(result.sql, "(\"id\" = $1 AND \"name\" LIKE $2)");
+    }
+
+    #[test]
+    fn test_bitor_operator() {
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let email_null = Expression::comparison_no_value(email_field(), Operator::IsNull);
+        // 使用 | 运算符
+        let expr = id_eq | email_null;
+        let result = expr.build();
+        assert_eq!(result.sql, "(\"id\" = $1 OR \"email\" IS NULL)");
+    }
+
+    #[test]
+    fn test_combined_operators() {
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let name_like = Expression::comparison(
+            name_field(),
+            Operator::Like,
+            Value::String("John%".to_string()),
+        );
+        let email_null = Expression::comparison_no_value(email_field(), Operator::IsNull);
+        // 使用 & 和 | 运算符组合
+        let expr = (id_eq & name_like) | email_null;
+        let result = expr.build();
+        assert_eq!(
+            result.sql,
+            "((\"id\" = $1 AND \"name\" LIKE $2) OR \"email\" IS NULL)"
+        );
     }
 }
