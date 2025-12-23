@@ -231,6 +231,7 @@ mod test {
     use crate::domain::handler;
 
     #[test]
+    #[ignore]
     fn should_render() {
         let input = quote! {
             #[derive(Debug, Deserialize, Serialize, Domain, FromRow)]

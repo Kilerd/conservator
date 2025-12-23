@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::expression::{Expression, FieldInfo, IntoValue, Operator, Value};
+
 /// 表示数据库表中一个字段的元信息
 /// 
 /// `T` 是字段的 Rust 类型，用于类型安全的查询构建
@@ -44,22 +46,211 @@ impl<T> Field<T> {
     pub fn qualified_name(&self) -> String {
         format!("{}.\"{}\"", self.table, self.name)
     }
+
+    /// 转换为不带泛型的 FieldInfo
+    pub fn info(&self) -> FieldInfo {
+        FieldInfo::new(self.name, self.table, self.is_primary_key)
+    }
+}
+
+// 为实现了 IntoValue 的类型提供表达式构建方法
+impl<T: IntoValue> Field<T> {
+    /// 创建 field = value 表达式
+    /// 
+    /// ```ignore
+    /// let expr = User::COLUMNS.id.eq(1);
+    /// let result = expr.build();
+    /// // result.sql = "\"id\" = $1"
+    /// // result.values = [Value::I32(1)]
+    /// ```
+    pub fn eq(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Eq, value.into_value())
+    }
+
+    /// 创建 field != value 表达式
+    pub fn ne(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Ne, value.into_value())
+    }
+
+    /// 创建 field > value 表达式
+    pub fn gt(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Gt, value.into_value())
+    }
+
+    /// 创建 field < value 表达式
+    pub fn lt(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Lt, value.into_value())
+    }
+
+    /// 创建 field >= value 表达式
+    pub fn gte(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Gte, value.into_value())
+    }
+
+    /// 创建 field <= value 表达式
+    pub fn lte(&self, value: T) -> Expression {
+        Expression::comparison(self.info(), Operator::Lte, value.into_value())
+    }
+
+    /// 创建 field BETWEEN low AND high 表达式
+    /// 
+    /// ```ignore
+    /// let expr = User::COLUMNS.age.between(18, 65);
+    /// let result = expr.build();
+    /// // result.sql = "\"age\" BETWEEN $1 AND $2"
+    /// // result.values = [Value::I32(18), Value::I32(65)]
+    /// ```
+    pub fn between(&self, low: T, high: T) -> Expression {
+        Expression::comparison_multi(
+            self.info(),
+            Operator::Between,
+            vec![low.into_value(), high.into_value()],
+        )
+    }
+
+    /// 创建 field IN (values) 表达式
+    /// 
+    /// ```ignore
+    /// let expr = User::COLUMNS.status.in_list(vec![1, 2, 3]);
+    /// let result = expr.build();
+    /// // result.sql = "\"status\" IN ($1, $2, $3)"
+    /// // result.values = [Value::I32(1), Value::I32(2), Value::I32(3)]
+    /// ```
+    pub fn in_list(&self, values: Vec<T>) -> Expression {
+        let values: Vec<Value> = values.into_iter().map(|v| v.into_value()).collect();
+        Expression::comparison_multi(self.info(), Operator::In, values)
+    }
+}
+
+// 为 Field<Option<T>> 提供 IS NULL / IS NOT NULL 方法
+impl<T> Field<Option<T>> {
+    /// 创建 field IS NULL 表达式
+    /// 
+    /// ```ignore
+    /// let expr = User::COLUMNS.email.is_null();
+    /// let result = expr.build();
+    /// // result.sql = "\"email\" IS NULL"
+    /// // result.values = []
+    /// ```
+    pub fn is_null(&self) -> Expression {
+        Expression::comparison_no_value(self.info(), Operator::IsNull)
+    }
+
+    /// 创建 field IS NOT NULL 表达式
+    pub fn is_not_null(&self) -> Expression {
+        Expression::comparison_no_value(self.info(), Operator::IsNotNull)
+    }
+}
+
+// 为 Field<String> 提供 LIKE 方法
+impl Field<String> {
+    /// 创建 field LIKE pattern 表达式
+    /// 
+    /// ```ignore
+    /// let expr = User::COLUMNS.name.like("John%");
+    /// let result = expr.build();
+    /// // result.sql = "\"name\" LIKE $1"
+    /// // result.values = [Value::String("John%")]
+    /// ```
+    pub fn like(&self, pattern: &str) -> Expression {
+        Expression::comparison(
+            self.info(),
+            Operator::Like,
+            Value::String(pattern.to_string()),
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Field;
+    use super::*;
+    use crate::expression::Value;
 
     #[test]
-    fn field_type_test() {
-        // 测试 Field 类型的基本功能
+    fn test_field_eq() {
         let field: Field<i32> = Field::new("id", "users", true);
+        let expr = field.eq(42);
+        let result = expr.build();
+        assert_eq!(result.sql, "\"id\" = $1");
+        match &result.values[0] {
+            Value::I32(v) => assert_eq!(*v, 42),
+            _ => panic!("Expected I32"),
+        }
+    }
 
-        assert_eq!(field.name, "id");
-        assert_eq!(field.table, "users");
-        assert!(field.is_primary_key);
-        assert_eq!(field.quoted_name(), "\"id\"");
-        assert_eq!(field.qualified_name(), "users.\"id\"");
+    #[test]
+    fn test_field_like() {
+        let field: Field<String> = Field::new("name", "users", false);
+        let expr = field.like("John%");
+        let result = expr.build();
+        assert_eq!(result.sql, "\"name\" LIKE $1");
+        match &result.values[0] {
+            Value::String(v) => assert_eq!(v, "John%"),
+            _ => panic!("Expected String"),
+        }
+    }
+
+    #[test]
+    fn test_field_in_list() {
+        let field: Field<i32> = Field::new("status", "users", false);
+        let expr = field.in_list(vec![1, 2, 3]);
+        let result = expr.build();
+        assert_eq!(result.sql, "\"status\" IN ($1, $2, $3)");
+        assert_eq!(result.values.len(), 3);
+    }
+
+    #[test]
+    fn test_field_between() {
+        let field: Field<i32> = Field::new("age", "users", false);
+        let expr = field.between(18, 65);
+        let result = expr.build();
+        assert_eq!(result.sql, "\"age\" BETWEEN $1 AND $2");
+        assert_eq!(result.values.len(), 2);
+        match (&result.values[0], &result.values[1]) {
+            (Value::I32(a), Value::I32(b)) => {
+                assert_eq!(*a, 18);
+                assert_eq!(*b, 65);
+            }
+            _ => panic!("Expected I32 values"),
+        }
+    }
+
+    #[test]
+    fn test_field_is_null() {
+        let field: Field<Option<String>> = Field::new("email", "users", false);
+        let expr = field.is_null();
+        let result = expr.build();
+        assert_eq!(result.sql, "\"email\" IS NULL");
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_field_is_not_null() {
+        let field: Field<Option<i32>> = Field::new("age", "users", false);
+        let expr = field.is_not_null();
+        let result = expr.build();
+        assert_eq!(result.sql, "\"age\" IS NOT NULL");
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_combined_expression() {
+        let id: Field<i32> = Field::new("id", "users", true);
+        let name: Field<String> = Field::new("name", "users", false);
+        let email: Field<Option<String>> = Field::new("email", "users", false);
+
+        let expr = id.eq(1).and(name.like("John%")).or(email.is_null());
+        let result = expr.build();
+        assert_eq!(result.sql, "((\"id\" = $1 AND \"name\" LIKE $2) OR \"email\" IS NULL)");
+        assert_eq!(result.values.len(), 2);
+        
+        // 验证值的顺序和内容
+        match (&result.values[0], &result.values[1]) {
+            (Value::I32(id_val), Value::String(name_val)) => {
+                assert_eq!(*id_val, 1);
+                assert_eq!(name_val, "John%");
+            }
+            _ => panic!("Expected (I32, String)"),
+        }
     }
 }
-

@@ -2,7 +2,10 @@ use async_trait::async_trait;
 pub use conservator_macro::{auto, sql, Creatable, Domain};
 
 mod field;
+mod expression;
+
 pub use field::Field;
+pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
