@@ -46,7 +46,11 @@
 |----------|------|
 | `test_order_by_asc` | 升序排序 |
 | `test_order_by_desc` | 降序排序 |
-| `test_order_by_multiple_fields` | 多字段排序 |
+| `test_order_by_multiple_fields` | 双字段排序 (is_active DESC, name ASC) |
+| `test_order_by_three_fields` | 三字段排序 (name ASC, age DESC, score ASC) |
+| `test_order_by_mixed_asc_desc` | 混合升降序 (score DESC, age ASC) |
+| `test_order_by_with_same_values` | 相同值时的次级排序 |
+| `test_order_by_with_filter_and_limit` | 过滤 + 多重排序 + 分页组合 |
 | `test_order_by_with_limit` | 排序结合分页 (Top N) |
 
 ## 分页测试
@@ -139,5 +143,5 @@
 
 ---
 
-**总计: 65 个测试用例**
+**总计: 69 个测试用例**
 

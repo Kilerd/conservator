@@ -1,4 +1,4 @@
-use conservator::{Creatable, Domain, Order, Selectable};
+use conservator::{Creatable, Domain, Selectable};
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::OnceLock;
@@ -677,7 +677,7 @@ async fn test_order_by_asc() {
     insert_test_users(&pool).await;
 
     let users = User::select()
-        .order_by(User::COLUMNS.age, Order::Asc)
+        .order_by(User::COLUMNS.age)
         .all(&pool)
         .await
         .unwrap();
@@ -692,7 +692,7 @@ async fn test_order_by_desc() {
     insert_test_users(&pool).await;
 
     let users = User::select()
-        .order_by(User::COLUMNS.age, Order::Desc)
+        .order_by(User::COLUMNS.age.desc())
         .all(&pool)
         .await
         .unwrap();
@@ -707,8 +707,8 @@ async fn test_order_by_multiple_fields() {
     insert_test_users(&pool).await;
 
     let users = User::select()
-        .order_by(User::COLUMNS.is_active, Order::Desc) // active first
-        .order_by(User::COLUMNS.name, Order::Asc) // then by name
+        .order_by(User::COLUMNS.is_active.desc()) // active first
+        .order_by(User::COLUMNS.name) // then by name
         .all(&pool)
         .await
         .unwrap();
@@ -720,13 +720,126 @@ async fn test_order_by_multiple_fields() {
 }
 
 #[tokio::test]
+async fn test_order_by_three_fields() {
+    let pool = setup_test_db().await;
+
+    // 插入更多测试数据以便多重排序
+    let users_data = vec![
+        CreateUser { name: "Alice".into(), email: "a1@test.com".into(), age: 25, score: 80.0, is_active: true },
+        CreateUser { name: "Alice".into(), email: "a2@test.com".into(), age: 30, score: 90.0, is_active: true },
+        CreateUser { name: "Bob".into(), email: "b1@test.com".into(), age: 25, score: 85.0, is_active: true },
+        CreateUser { name: "Bob".into(), email: "b2@test.com".into(), age: 25, score: 75.0, is_active: false },
+        CreateUser { name: "Charlie".into(), email: "c1@test.com".into(), age: 30, score: 70.0, is_active: true },
+    ];
+
+    for user in users_data {
+        user.insert::<User>().returning_pk(&pool).await.unwrap();
+    }
+
+    // 三重排序: name ASC -> age DESC -> score ASC
+    let users = User::select()
+        .order_by(User::COLUMNS.name)
+        .order_by(User::COLUMNS.age.desc())
+        .order_by(User::COLUMNS.score)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Alice: age 30 first (desc), then age 25
+    assert_eq!(users[0].name, "Alice");
+    assert_eq!(users[0].age, 30);
+    assert_eq!(users[1].name, "Alice");
+    assert_eq!(users[1].age, 25);
+
+    // Bob: both age 25, score 75 first (asc), then 85
+    assert_eq!(users[2].name, "Bob");
+    assert_eq!(users[2].score, 75.0);
+    assert_eq!(users[3].name, "Bob");
+    assert_eq!(users[3].score, 85.0);
+
+    // Charlie last
+    assert_eq!(users[4].name, "Charlie");
+}
+
+#[tokio::test]
+async fn test_order_by_mixed_asc_desc() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // score DESC, age ASC
+    let users = User::select()
+        .order_by(User::COLUMNS.score.desc())
+        .order_by(User::COLUMNS.age)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // First by score descending: Eve(95), Bob(92), Alice(85.5), Diana(78.5), Charlie(70)
+    assert_eq!(users[0].name, "Eve");
+    assert_eq!(users[0].score, 95.0);
+    assert_eq!(users[4].name, "Charlie");
+    assert_eq!(users[4].score, 70.0);
+}
+
+#[tokio::test]
+async fn test_order_by_with_same_values() {
+    let pool = setup_test_db().await;
+
+    // 插入具有相同值的数据
+    let users_data = vec![
+        CreateUser { name: "User A".into(), email: "a@test.com".into(), age: 25, score: 80.0, is_active: true },
+        CreateUser { name: "User B".into(), email: "b@test.com".into(), age: 25, score: 80.0, is_active: true },
+        CreateUser { name: "User C".into(), email: "c@test.com".into(), age: 25, score: 80.0, is_active: true },
+    ];
+
+    for user in users_data {
+        user.insert::<User>().returning_pk(&pool).await.unwrap();
+    }
+
+    // 相同 age 和 score，按 name 排序
+    let users = User::select()
+        .order_by(User::COLUMNS.age)
+        .order_by(User::COLUMNS.score)
+        .order_by(User::COLUMNS.name)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users[0].name, "User A");
+    assert_eq!(users[1].name, "User B");
+    assert_eq!(users[2].name, "User C");
+}
+
+#[tokio::test]
+async fn test_order_by_with_filter_and_limit() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // 过滤 + 多重排序 + 分页
+    let users = User::select()
+        .filter(User::COLUMNS.is_active.eq(true))
+        .order_by(User::COLUMNS.score.desc())
+        .order_by(User::COLUMNS.age)
+        .limit(2)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Active users by score desc: Eve(95), Bob(92), Alice(85.5), Diana(78.5)
+    // Top 2: Eve, Bob
+    assert_eq!(users.len(), 2);
+    assert_eq!(users[0].name, "Eve");
+    assert_eq!(users[1].name, "Bob");
+}
+
+#[tokio::test]
 async fn test_order_by_with_limit() {
     let pool = setup_test_db().await;
     insert_test_users(&pool).await;
 
     // Top 3 users by score
     let users = User::select()
-        .order_by(User::COLUMNS.score, Order::Desc)
+        .order_by(User::COLUMNS.score.desc())
         .limit(3)
         .all(&pool)
         .await
@@ -749,7 +862,7 @@ async fn test_limit_offset_pagination() {
 
     // Page 1 (first 2)
     let page1 = User::select()
-        .order_by(User::COLUMNS.id, Order::Asc)
+        .order_by(User::COLUMNS.id)
         .limit(2)
         .offset(0)
         .all(&pool)
@@ -758,7 +871,7 @@ async fn test_limit_offset_pagination() {
 
     // Page 2 (next 2)
     let page2 = User::select()
-        .order_by(User::COLUMNS.id, Order::Asc)
+        .order_by(User::COLUMNS.id)
         .limit(2)
         .offset(2)
         .all(&pool)
@@ -767,7 +880,7 @@ async fn test_limit_offset_pagination() {
 
     // Page 3 (last 1)
     let page3 = User::select()
-        .order_by(User::COLUMNS.id, Order::Asc)
+        .order_by(User::COLUMNS.id)
         .limit(2)
         .offset(4)
         .all(&pool)
@@ -1039,7 +1152,7 @@ async fn test_returning_with_filter() {
     let summaries: Vec<UserWithScore> = User::select()
         .filter(User::COLUMNS.score.gt(80.0))
         .returning::<UserWithScore>()
-        .order_by(User::COLUMNS.score, Order::Desc)
+        .order_by(User::COLUMNS.score.desc())
         .all(&pool)
         .await
         .unwrap();
@@ -1350,7 +1463,7 @@ async fn test_float_comparison() {
     let users = User::select()
         .filter(User::COLUMNS.score.gte(85.0))
         .filter(User::COLUMNS.score.lte(95.0))
-        .order_by(User::COLUMNS.score, Order::Asc)
+        .order_by(User::COLUMNS.score)
         .all(&pool)
         .await
         .unwrap();
@@ -1409,7 +1522,7 @@ async fn test_bulk_insert_and_query() {
     let result = User::select()
         .filter(User::COLUMNS.is_active.eq(true))
         .filter(User::COLUMNS.age.between(30, 40))
-        .order_by(User::COLUMNS.score, Order::Desc)
+        .order_by(User::COLUMNS.score.desc())
         .limit(10)
         .all(&pool)
         .await
@@ -1572,7 +1685,7 @@ async fn test_datetime_order_by() {
 
     // 按创建时间升序排序
     let products = Product::select()
-        .order_by(Product::COLUMNS.created_at, Order::Asc)
+        .order_by(Product::COLUMNS.created_at)
         .all(&pool)
         .await
         .unwrap();
@@ -1583,7 +1696,7 @@ async fn test_datetime_order_by() {
 
     // 按创建时间降序排序
     let products_desc = Product::select()
-        .order_by(Product::COLUMNS.created_at, Order::Desc)
+        .order_by(Product::COLUMNS.created_at.desc())
         .all(&pool)
         .await
         .unwrap();

@@ -52,7 +52,7 @@ Conservator provides type-safe query builders for SELECT, INSERT, UPDATE, and DE
 // Simple select
 let users = User::select()
     .filter(User::COLUMNS.name.like("John%"))
-    .order_by(User::COLUMNS.id, Order::Asc)
+    .order_by(User::COLUMNS.id)  // 默认升序
     .limit(10)
     .all(db)
     .await?;
@@ -61,6 +61,13 @@ let users = User::select()
 let user = User::select()
     .filter(User::COLUMNS.id.eq(1))
     .one(db)
+    .await?;
+
+// Order by with explicit direction
+let users = User::select()
+    .order_by(User::COLUMNS.created_at.desc())  // 显式降序
+    .order_by(User::COLUMNS.name)               // 默认升序
+    .all(db)
     .await?;
 ```
 
@@ -175,6 +182,11 @@ User::COLUMNS.deleted_at.is_not_null() // deleted_at IS NOT NULL
 // Logical operators
 let expr = User::COLUMNS.id.eq(1) & User::COLUMNS.name.like("John%");  // AND
 let expr = User::COLUMNS.id.eq(1) | User::COLUMNS.id.eq(2);            // OR
+
+// Ordering
+User::COLUMNS.id              // 默认升序 (ASC)
+User::COLUMNS.id.asc()        // 显式升序
+User::COLUMNS.id.desc()       // 降序
 ```
 
 ## Traits Overview

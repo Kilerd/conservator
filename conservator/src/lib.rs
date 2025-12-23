@@ -9,7 +9,7 @@ mod builder;
 pub use field::Field;
 pub use value::{IntoValue, Value};
 pub use expression::{Expression, FieldInfo, Operator, SqlResult};
-pub use builder::{DeleteBuilder, InsertBuilder, InsertManyBuilder, JoinType, Order, SelectBuilder, UpdateBuilder};
+pub use builder::{DeleteBuilder, InsertBuilder, InsertManyBuilder, IntoOrderedField, JoinType, Order, OrderedField, SelectBuilder, UpdateBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;

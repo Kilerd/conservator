@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::builder::{IntoOrderedField, Order, OrderedField};
 use crate::expression::{Expression, FieldInfo, Operator};
 use crate::value::{IntoValue, Value};
 
@@ -51,6 +52,41 @@ impl<T> Field<T> {
     /// 转换为不带泛型的 FieldInfo
     pub fn info(&self) -> FieldInfo {
         FieldInfo::new(self.name, self.table, self.is_primary_key)
+    }
+
+    /// 创建升序排序
+    /// 
+    /// ```ignore
+    /// User::select()
+    ///     .order_by(User::COLUMNS.name.asc())
+    ///     .all(&pool)
+    /// ```
+    pub fn asc(&self) -> OrderedField {
+        OrderedField::new(self.info(), Order::Asc)
+    }
+
+    /// 创建降序排序
+    /// 
+    /// ```ignore
+    /// User::select()
+    ///     .order_by(User::COLUMNS.created_at.desc())
+    ///     .all(&pool)
+    /// ```
+    pub fn desc(&self) -> OrderedField {
+        OrderedField::new(self.info(), Order::Desc)
+    }
+}
+
+// Field<T> 默认升序排序
+impl<T> IntoOrderedField for Field<T> {
+    fn into_ordered_field(self) -> OrderedField {
+        OrderedField::new(self.info(), Order::Asc)
+    }
+}
+
+impl<T> IntoOrderedField for &Field<T> {
+    fn into_ordered_field(self) -> OrderedField {
+        OrderedField::new(self.info(), Order::Asc)
     }
 }
 

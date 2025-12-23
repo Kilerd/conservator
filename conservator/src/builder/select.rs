@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::{Domain, Expression, FieldInfo, Order, Selectable, SqlResult, Value};
+use crate::{Domain, Expression, FieldInfo, Selectable, SqlResult, Value};
 
-use super::JoinClause;
-use super::JoinType;
+use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
 
 /// SELECT 查询构建器
 /// 
@@ -13,14 +12,15 @@ use super::JoinType;
 /// ```ignore
 /// let result = SelectBuilder::<User>::new()
 ///     .filter(User::COLUMNS.id.eq(1))
-///     .order_by(User::COLUMNS.id, Order::Asc)
+///     .order_by(User::COLUMNS.id)  // 默认升序
+///     .order_by(User::COLUMNS.name.desc())  // 显式降序
 ///     .limit(10)
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
 pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain> {
     filter_expr: Option<Expression>,
-    order_by: Vec<(FieldInfo, Order)>,
+    order_by: Vec<OrderedField>,
     limit: Option<usize>,
     offset: Option<usize>,
     group_by: Vec<FieldInfo>,
@@ -78,11 +78,21 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     }
 
     /// 添加 ORDER BY 子句
-    pub fn order_by<F>(mut self, field: F, order: Order) -> Self
-    where
-        F: Into<FieldInfo>,
-    {
-        self.order_by.push((field.into(), order));
+    /// 
+    /// 支持三种用法:
+    /// - `.order_by(field)` - 默认升序
+    /// - `.order_by(field.asc())` - 显式升序
+    /// - `.order_by(field.desc())` - 显式降序
+    /// 
+    /// # Example
+    /// ```ignore
+    /// User::select()
+    ///     .order_by(User::COLUMNS.score.desc())
+    ///     .order_by(User::COLUMNS.name)  // 默认升序
+    ///     .all(&pool)
+    /// ```
+    pub fn order_by<F: IntoOrderedField>(mut self, field: F) -> Self {
+        self.order_by.push(field.into_ordered_field());
         self
     }
 
@@ -185,7 +195,7 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             let order_by_cols = self
                 .order_by
                 .iter()
-                .map(|(f, o)| format!("{} {}", f.quoted_name(), o.to_sql()))
+                .map(|of| format!("{} {}", of.field.quoted_name(), of.order.to_sql()))
                 .collect::<Vec<_>>()
                 .join(", ");
             sql_parts.push(format!("ORDER BY {}", order_by_cols));
@@ -333,7 +343,7 @@ mod tests {
     #[test]
     fn test_select_with_order_by() {
         let result = SelectBuilder::<TestUser>::new()
-            .order_by(id_field(), Order::Asc)
+            .order_by(id_field()) // 默认升序
             .build();
         assert_eq!(
             result.sql,
@@ -366,10 +376,12 @@ mod tests {
 
     #[test]
     fn test_complex_select() {
+        use crate::builder::{OrderedField, Order};
+        
         let expr = Expression::comparison(id_field(), Operator::Gt, Value::I32(10));
         let result = SelectBuilder::<TestUser>::new()
             .filter(expr)
-            .order_by(name_field(), Order::Desc)
+            .order_by(OrderedField::new(name_field(), Order::Desc))
             .limit(50)
             .offset(100)
             .build();
