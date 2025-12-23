@@ -1418,3 +1418,237 @@ async fn test_bulk_insert_and_query() {
     assert!(result.len() <= 10);
     assert!(result.iter().all(|u| u.is_active && u.age >= 30 && u.age <= 40));
 }
+
+// ==========================================
+// 日期时间类型操作符测试
+// ==========================================
+
+/// 插入带有不同时间戳的产品用于测试
+async fn insert_test_products_with_dates(pool: &PgPool) -> Vec<i32> {
+    use chrono::{Duration, Utc};
+
+    let base_time = Utc::now();
+    let mut pks = Vec::new();
+
+    let products = vec![
+        CreateProduct {
+            uuid: uuid::Uuid::new_v4(),
+            name: "Product A".into(),
+            price: "10.00".parse().unwrap(),
+            metadata: serde_json::json!({}),
+            created_at: base_time - Duration::days(30), // 30天前
+        },
+        CreateProduct {
+            uuid: uuid::Uuid::new_v4(),
+            name: "Product B".into(),
+            price: "20.00".parse().unwrap(),
+            metadata: serde_json::json!({}),
+            created_at: base_time - Duration::days(7), // 7天前
+        },
+        CreateProduct {
+            uuid: uuid::Uuid::new_v4(),
+            name: "Product C".into(),
+            price: "30.00".parse().unwrap(),
+            metadata: serde_json::json!({}),
+            created_at: base_time - Duration::days(1), // 昨天
+        },
+        CreateProduct {
+            uuid: uuid::Uuid::new_v4(),
+            name: "Product D".into(),
+            price: "40.00".parse().unwrap(),
+            metadata: serde_json::json!({}),
+            created_at: base_time, // 现在
+        },
+    ];
+
+    for product in products {
+        let pk = product
+            .insert::<Product>()
+            .returning_pk(pool)
+            .await
+            .unwrap();
+        pks.push(pk);
+    }
+    pks
+}
+
+#[tokio::test]
+async fn test_datetime_gt_operator() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找 7 天内创建的产品
+    let cutoff = Utc::now() - Duration::days(7);
+    let products = Product::select()
+        .filter(Product::COLUMNS.created_at.gt(cutoff))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product C (昨天) 和 Product D (现在)
+    assert_eq!(products.len(), 2);
+}
+
+#[tokio::test]
+async fn test_datetime_lt_operator() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找 14 天前创建的产品 (确保只有 Product A)
+    let cutoff = Utc::now() - Duration::days(14);
+    let products = Product::select()
+        .filter(Product::COLUMNS.created_at.lt(cutoff))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product A (30天前)
+    assert_eq!(products.len(), 1);
+    assert_eq!(products[0].name, "Product A");
+}
+
+#[tokio::test]
+async fn test_datetime_gte_operator() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找 1 天内创建的产品 (包含边界)
+    let cutoff = Utc::now() - Duration::days(2);
+    let products = Product::select()
+        .filter(Product::COLUMNS.created_at.gte(cutoff))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product C (昨天) 和 Product D (现在)
+    assert_eq!(products.len(), 2);
+}
+
+#[tokio::test]
+async fn test_datetime_lte_operator() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找 7 天前及更早创建的产品
+    let cutoff = Utc::now() - Duration::days(7);
+    let products = Product::select()
+        .filter(Product::COLUMNS.created_at.lte(cutoff))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product A (30天前) 和 Product B (刚好7天前)
+    assert_eq!(products.len(), 2);
+}
+
+#[tokio::test]
+async fn test_datetime_between_operator() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找 7-14 天前创建的产品
+    let start = Utc::now() - Duration::days(14);
+    let end = Utc::now() - Duration::days(2);
+    let products = Product::select()
+        .filter(Product::COLUMNS.created_at.between(start, end))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product B (7天前)
+    assert_eq!(products.len(), 1);
+    assert_eq!(products[0].name, "Product B");
+}
+
+#[tokio::test]
+async fn test_datetime_order_by() {
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 按创建时间升序排序
+    let products = Product::select()
+        .order_by(Product::COLUMNS.created_at, Order::Asc)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(products.len(), 4);
+    assert_eq!(products[0].name, "Product A"); // 最早
+    assert_eq!(products[3].name, "Product D"); // 最新
+
+    // 按创建时间降序排序
+    let products_desc = Product::select()
+        .order_by(Product::COLUMNS.created_at, Order::Desc)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(products_desc[0].name, "Product D"); // 最新
+    assert_eq!(products_desc[3].name, "Product A"); // 最早
+}
+
+#[tokio::test]
+async fn test_datetime_combined_with_other_filters() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 查找价格 > 15 且 7 天内创建的产品
+    let cutoff = Utc::now() - Duration::days(7);
+    let price: sqlx::types::BigDecimal = "15.00".parse().unwrap();
+
+    let products = Product::select()
+        .filter(Product::COLUMNS.price.gt(price) & Product::COLUMNS.created_at.gt(cutoff))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Product C (30.00, 昨天) 和 Product D (40.00, 现在)
+    assert_eq!(products.len(), 2);
+}
+
+#[tokio::test]
+async fn test_datetime_in_update() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    let pks = insert_test_products_with_dates(&pool).await;
+
+    // 更新 14 天前的产品名称 (确保只有 Product A)
+    let cutoff = Utc::now() - Duration::days(14);
+    let rows = Product::update_query()
+        .set(Product::COLUMNS.name, "Old Product".to_string())
+        .filter(Product::COLUMNS.created_at.lt(cutoff))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows, 1); // 只有 Product A
+
+    let product = Product::fetch_one_by_pk(&pks[0], &pool).await.unwrap();
+    assert_eq!(product.name, "Old Product");
+}
+
+#[tokio::test]
+async fn test_datetime_in_delete() {
+    use chrono::{Duration, Utc};
+    let pool = setup_test_db().await;
+    insert_test_products_with_dates(&pool).await;
+
+    // 删除 14 天前的产品
+    let cutoff = Utc::now() - Duration::days(14);
+    let rows = Product::delete()
+        .filter(Product::COLUMNS.created_at.lt(cutoff))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows, 1); // 只有 Product A (30天前)
+
+    let remaining = Product::select().all(&pool).await.unwrap();
+    assert_eq!(remaining.len(), 3);
+}

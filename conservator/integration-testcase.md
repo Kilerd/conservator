@@ -115,6 +115,20 @@
 | `test_transaction_rollback` | 事务回滚 |
 | `test_transaction_multiple_operations` | 单事务内多操作 (增删改) |
 
+## 日期时间类型操作符测试
+
+| 测试名称 | 简介 |
+|----------|------|
+| `test_datetime_gt_operator` | DateTime 大于比较 (7天内) |
+| `test_datetime_lt_operator` | DateTime 小于比较 (14天前) |
+| `test_datetime_gte_operator` | DateTime 大于等于比较 |
+| `test_datetime_lte_operator` | DateTime 小于等于比较 |
+| `test_datetime_between_operator` | DateTime 范围查询 (7-14天前) |
+| `test_datetime_order_by` | DateTime 排序 (ASC/DESC) |
+| `test_datetime_combined_with_other_filters` | DateTime 结合其他过滤条件 |
+| `test_datetime_in_update` | 使用 DateTime 条件更新 |
+| `test_datetime_in_delete` | 使用 DateTime 条件删除 |
+
 ## 其他测试
 
 | 测试名称 | 简介 |
@@ -125,5 +139,5 @@
 
 ---
 
-**总计: 56 个测试用例**
+**总计: 65 个测试用例**
 
