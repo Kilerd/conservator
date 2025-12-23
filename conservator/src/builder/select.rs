@@ -18,26 +18,27 @@ use super::JoinType;
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
-pub struct SelectBuilder<T: Domain> {
+pub struct SelectBuilder<CoreDomain: Domain, Returning: Domain = CoreDomain> {
     filter_expr: Option<Expression>,
     order_by: Vec<(FieldInfo, Order)>,
     limit: Option<usize>,
     offset: Option<usize>,
     group_by: Vec<FieldInfo>,
     joins: Vec<JoinClause>,
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<CoreDomain>,
+    _returning_phantom: PhantomData<Returning>,
 }
 
-impl<T: Domain> Default for SelectBuilder<T> {
+impl<T: Domain> Default for SelectBuilder<T, T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Domain> SelectBuilder<T> {
+impl<T: Domain> SelectBuilder<T, T> {
     /// 创建新的查询构建器
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> SelectBuilder<T, T> {
+        SelectBuilder {
             filter_expr: None,
             order_by: Vec::new(),
             limit: None,
@@ -45,6 +46,23 @@ impl<T: Domain> SelectBuilder<T> {
             group_by: Vec::new(),
             joins: Vec::new(),
             _phantom: PhantomData,
+            _returning_phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Domain, Returning: Domain> SelectBuilder<T, Returning> {
+
+    pub fn returning<R: Domain>(self) -> SelectBuilder<T, R> {
+        SelectBuilder::<T, R> {
+            filter_expr: self.filter_expr,
+            order_by: self.order_by,
+            limit: self.limit,
+            offset: self.offset,
+            group_by: self.group_by,
+            joins: self.joins,
+            _phantom: self._phantom,
+            _returning_phantom: PhantomData,
         }
     }
 
@@ -127,8 +145,8 @@ impl<T: Domain> SelectBuilder<T> {
         let mut all_values: Vec<Value> = Vec::new();
         let mut param_idx = 1usize;
 
-        // SELECT 子句
-        let columns = T::COLUMN_NAMES
+        // SELECT 子句 - 使用 Returning 的列名
+        let columns = Returning::COLUMN_NAMES
             .iter()
             .map(|name| format!("\"{}\"", name))
             .collect::<Vec<_>>()
@@ -195,12 +213,12 @@ impl<T: Domain> SelectBuilder<T> {
     pub async fn one<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
         self,
         executor: E,
-    ) -> Result<T, sqlx::Error>
+    ) -> Result<Returning, sqlx::Error>
     where
-        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
         for value in sql_result.values {
             query = value.bind_to(query);
         }
@@ -211,12 +229,12 @@ impl<T: Domain> SelectBuilder<T> {
     pub async fn all<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
         self,
         executor: E,
-    ) -> Result<Vec<T>, sqlx::Error>
+    ) -> Result<Vec<Returning>, sqlx::Error>
     where
-        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
         for value in sql_result.values {
             query = value.bind_to(query);
         }
@@ -227,12 +245,12 @@ impl<T: Domain> SelectBuilder<T> {
     pub async fn optional<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
         self,
         executor: E,
-    ) -> Result<Option<T>, sqlx::Error>
+    ) -> Result<Option<Returning>, sqlx::Error>
     where
-        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
         for value in sql_result.values {
             query = value.bind_to(query);
         }

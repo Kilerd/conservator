@@ -30,8 +30,8 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
 
     type PrimaryKey: IntoValue + Copy + Send + Sync;
 
-    fn select() -> SelectBuilder<Self> {
-        SelectBuilder::<Self>::new()
+    fn select() -> SelectBuilder<Self, Self> {
+        SelectBuilder::<Self, Self>::new()
     }
 
     fn delete() -> DeleteBuilder<Self> {
