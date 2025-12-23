@@ -35,9 +35,9 @@ pub trait Domain: Sized {
     }
 
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-        pk: &Self::PrimaryKey,
-        executor: E,
-    ) -> Result<Option<Self>, sqlx::Error>{
+        _pk: &Self::PrimaryKey,
+        _executor: E,
+    ) -> Result<Option<Self>, sqlx::Error> {
         unimplemented!()
     }
 
@@ -46,15 +46,15 @@ pub trait Domain: Sized {
         'c: 'e,
         E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>,
     >(
-        pk: &Self::PrimaryKey,
-        executor: E,
-    ) -> Result<Self, ::sqlx::Error>{
+        _pk: &Self::PrimaryKey,
+        _executor: E,
+    ) -> Result<Self, ::sqlx::Error> {
         unimplemented!()
     }
 
     async fn fetch_all<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        executor: E,
-    ) -> Result<Vec<Self>, ::sqlx::Error>{
+        _executor: E,
+    ) -> Result<Vec<Self>, ::sqlx::Error> {
         unimplemented!()
     }
 
@@ -64,30 +64,30 @@ pub trait Domain: Sized {
         E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>,
         C: Creatable,
     >(
-        data: C,
-        executor: E,
-    ) -> Result<Self, ::sqlx::Error>{
+        _data: C,
+        _executor: E,
+    ) -> Result<Self, ::sqlx::Error> {
         unimplemented!()
     }
 
     async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: Creatable>(
-        data: Vec<C>,
-        executor: E,
-    ) -> Result<(), ::sqlx::Error>{
+        _data: Vec<C>,
+        _executor: E,
+    ) -> Result<(), ::sqlx::Error> {
         unimplemented!()
     }
 
     async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        pk: &Self::PrimaryKey,
-        executor: E,
-    ) -> Result<(), ::sqlx::Error>{
+        _pk: &Self::PrimaryKey,
+        _executor: E,
+    ) -> Result<(), ::sqlx::Error> {
         unimplemented!()
     }
 
     async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        entity: Self,
-        executor: E,
-    ) -> Result<(), ::sqlx::Error>{
+        _entity: Self,
+        _executor: E,
+    ) -> Result<(), ::sqlx::Error> {
         unimplemented!()
     }
 }

@@ -234,6 +234,54 @@ impl<T: Domain> SelectBuilder<T> {
             values: all_values,
         }
     }
+
+    /// 执行查询并返回单个结果
+    pub async fn one<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+        self,
+        executor: E,
+    ) -> Result<T, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+    {
+        let sql_result = self.build();
+        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        for value in sql_result.values {
+            query = value.bind_to(query);
+        }
+        query.fetch_one(executor).await
+    }
+
+    /// 执行查询并返回所有结果
+    pub async fn all<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+        self,
+        executor: E,
+    ) -> Result<Vec<T>, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+    {
+        let sql_result = self.build();
+        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        for value in sql_result.values {
+            query = value.bind_to(query);
+        }
+        query.fetch_all(executor).await
+    }
+
+    /// 执行查询并返回可选结果
+    pub async fn optional<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+        self,
+        executor: E,
+    ) -> Result<Option<T>, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+    {
+        let sql_result = self.build();
+        let mut query = sqlx::query_as::<_, T>(&sql_result.sql);
+        for value in sql_result.values {
+            query = value.bind_to(query);
+        }
+        query.fetch_optional(executor).await
+    }
 }
 
 #[cfg(test)]

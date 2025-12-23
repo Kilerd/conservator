@@ -93,6 +93,39 @@ pub enum Value {
     None,
 }
 
+impl Value {
+    /// 将 Value 绑定到 sqlx 查询
+    pub fn bind_to<'q, O>(
+        self,
+        query: sqlx::query::QueryAs<
+            'q,
+            sqlx::Postgres,
+            O,
+            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
+        >,
+    ) -> sqlx::query::QueryAs<
+        'q,
+        sqlx::Postgres,
+        O,
+        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
+    >
+    where
+        O: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    {
+        match self {
+            Value::Bool(v) => query.bind(v),
+            Value::I16(v) => query.bind(v),
+            Value::I32(v) => query.bind(v),
+            Value::I64(v) => query.bind(v),
+            Value::F32(v) => query.bind(v),
+            Value::F64(v) => query.bind(v),
+            Value::String(v) => query.bind(v),
+            Value::Bytes(v) => query.bind(v),
+            Value::None => query,
+        }
+    }
+}
+
 /// 将 Rust 类型转换为 Value 的 trait
 pub trait IntoValue {
     fn into_value(self) -> Value;
