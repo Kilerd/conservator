@@ -60,6 +60,19 @@ pub(crate) fn handler(
     let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1).unwrap();
 
     let fields = crud_opts.data.take_struct().unwrap();
+    
+    // 收集所有字段信息用于生成 Columns 结构体
+    let all_fields: Vec<_> = fields
+        .fields
+        .iter()
+        .filter_map(|field| {
+            field.ident.clone().map(|ident| {
+                let is_pk = field.primary_key == Some(true);
+                (ident, field.ty.clone(), is_pk)
+            })
+        })
+        .collect();
+    
     let non_pk_field_names = fields
         .fields
         .iter()
@@ -90,7 +103,28 @@ pub(crate) fn handler(
     let pk_field_type = pk_field.ty;
 
     let table_name = &crud_opts.table;
-    let ident = crud_opts.ident;
+    let ident = crud_opts.ident.clone();
+    
+    // 生成 Columns 结构体名称
+    let columns_struct_ident = syn::Ident::new(
+        &format!("{}Columns", ident),
+        ident.span(),
+    );
+    
+    // 生成 Columns 结构体的字段定义
+    let columns_fields = all_fields.iter().map(|(field_ident, field_ty, _)| {
+        quote! {
+            pub #field_ident: ::conservator::Field<#field_ty>
+        }
+    });
+    
+    // 生成 COLUMNS 常量的字段初始化
+    let columns_init = all_fields.iter().map(|(field_ident, _, is_pk)| {
+        let field_name = field_ident.to_string();
+        quote! {
+            #field_ident: ::conservator::Field::new(#field_name, #table_name, #is_pk)
+        }
+    });
 
     let find_by_id_sql = find_by_id(&crud_opts.table, &pk_field_name);
     let fetch_all_sql = fetch_all(&crud_opts.table);
@@ -98,9 +132,21 @@ pub(crate) fn handler(
     let update_sql = update_sql(&crud_opts.table, &pk_field_name, &non_pk_field_names);
 
     let ret = quote! {
+        /// 包含 #ident 所有字段元信息的结构体
+        #[derive(Debug, Clone, Copy)]
+        pub struct #columns_struct_ident {
+            #(#columns_fields),*
+        }
+        
+        impl #ident {
+            /// 所有字段的元信息
+            pub const COLUMNS: #columns_struct_ident = #columns_struct_ident {
+                #(#columns_init),*
+            };
+        }
     
-            #[::async_trait::async_trait]
-            impl ::conservator::Domain for #ident {
+        #[::async_trait::async_trait]
+        impl ::conservator::Domain for #ident {
                 const PK_FIELD_NAME: &'static str = #pk_field_name;
                 const TABLE_NAME: &'static str = #table_name;
     

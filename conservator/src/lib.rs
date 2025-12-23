@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 pub use conservator_macro::{auto, sql, Creatable, Domain};
 
+mod field;
+pub use field::Field;
+
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
 pub use sqlx::FromRow;
@@ -110,3 +113,5 @@ mod test {
         t.pass("tests/pass/*.rs");
     }
 }
+
+
