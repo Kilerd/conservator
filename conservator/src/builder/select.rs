@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{Domain, Expression, FieldInfo, Order, SqlResult, Value};
+use crate::{Domain, Expression, FieldInfo, Order, Selectable, SqlResult, Value};
 
 use super::JoinClause;
 use super::JoinType;
@@ -18,7 +18,7 @@ use super::JoinType;
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
-pub struct SelectBuilder<CoreDomain: Domain, Returning: Domain = CoreDomain> {
+pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain> {
     filter_expr: Option<Expression>,
     order_by: Vec<(FieldInfo, Order)>,
     limit: Option<usize>,
@@ -51,9 +51,9 @@ impl<T: Domain> SelectBuilder<T, T> {
     }
 }
 
-impl<T: Domain, Returning: Domain> SelectBuilder<T, Returning> {
+impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
 
-    pub fn returning<R: Domain>(self) -> SelectBuilder<T, R> {
+    pub fn returning<R: Selectable>(self) -> SelectBuilder<T, R> {
         SelectBuilder::<T, R> {
             filter_expr: self.filter_expr,
             order_by: self.order_by,
@@ -265,7 +265,6 @@ mod tests {
     use crate::Value;
 
     // 模拟一个 Domain 实现用于测试
-    #[derive(sqlx::FromRow)]
     struct TestUser {
         #[allow(dead_code)]
         id: i32,
@@ -275,14 +274,34 @@ mod tests {
         email: String,
     }
 
+    impl Selectable for TestUser {
+        const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
+    }
+
+    impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for TestUser {
+        fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+            use sqlx::Row;
+            Ok(Self {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                email: row.try_get("email")?,
+            })
+        }
+    }
+
     #[async_trait::async_trait]
     impl Domain for TestUser {
         const PK_FIELD_NAME: &'static str = "id";
         const TABLE_NAME: &'static str = "users";
-        const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
 
         type PrimaryKey = i32;
 
+        async fn update<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+            &self,
+            _executor: E,
+        ) -> Result<(), sqlx::Error> {
+            unimplemented!()
+        }
     }
 
     fn id_field() -> FieldInfo {

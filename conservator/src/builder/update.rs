@@ -116,8 +116,8 @@ impl<T: Domain> UpdateBuilder<T, true, true> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Selectable;
 
-    #[derive(sqlx::FromRow)]
     struct TestUser {
         #[allow(dead_code)]
         id: i32,
@@ -127,12 +127,33 @@ mod tests {
         email: String,
     }
 
+    impl Selectable for TestUser {
+        const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
+    }
+
+    impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for TestUser {
+        fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+            use sqlx::Row;
+            Ok(Self {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                email: row.try_get("email")?,
+            })
+        }
+    }
+
     #[async_trait::async_trait]
     impl Domain for TestUser {
         const PK_FIELD_NAME: &'static str = "id";
         const TABLE_NAME: &'static str = "users";
-        const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
         type PrimaryKey = i32;
+
+        async fn update<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+            &self,
+            _executor: E,
+        ) -> Result<(), sqlx::Error> {
+            unimplemented!()
+        }
     }
 
     fn id_field() -> crate::Field<i32> {

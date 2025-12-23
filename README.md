@@ -7,7 +7,7 @@ Conservator ORM is based on sqlx, currently it only supports PostgreSQL.
 ### Define Domain Entity
 
 ```rust
-#[derive(Debug, Domain, FromRow)]
+#[derive(Debug, Domain)]
 #[domain(table = "users")]
 pub struct User {
     #[domain(primary_key)]
@@ -17,11 +17,20 @@ pub struct User {
 }
 ```
 
-The struct derived `Domain` auto-generates methods like:
+The `#[derive(Domain)]` macro automatically generates:
+- `Selectable` trait implementation (with `COLUMN_NAMES`)
+- `sqlx::FromRow` trait implementation
+- `Domain` trait implementation with CRUD methods
+
+**Note:** You no longer need to derive `FromRow` separately - it's now included in `Domain`.
+
+### Auto-generated Methods
+
 - `find_by_pk` - return optional entity
 - `fetch_one_by_pk` - return entity or raise
 - `fetch_all` - return all entities
 - `delete_by_pk` - delete by primary key
+- `update` - save entity changes to database (Active Record style)
 
 ### Define Creatable
 
@@ -53,16 +62,21 @@ let user = User::select()
     .filter(User::COLUMNS.id.eq(1))
     .one(db)
     .await?;
+```
 
-// Return custom type with .returning()
-#[derive(Debug, Domain, FromRow)]
-#[domain(table = "users")]
+#### Custom Return Type with `Selectable`
+
+Use `#[derive(Selectable)]` to define lightweight projection types for queries:
+
+```rust
+// Lightweight projection - only needs Selectable
+#[derive(Debug, Selectable)]
 pub struct UserSummary {
-    #[domain(primary_key)]
     pub id: i32,
     pub name: String,
 }
 
+// Use .returning() to switch return type
 let summaries: Vec<UserSummary> = User::select()
     .returning::<UserSummary>()
     .filter(User::COLUMNS.active.eq(true))
@@ -70,7 +84,7 @@ let summaries: Vec<UserSummary> = User::select()
     .await?;
 ```
 
-**Note:** Use `.returning::<T>()` to return a different type than the Domain. The returned type must implement `Domain` and `FromRow`, and its `COLUMN_NAMES` will be used in the SELECT clause.
+**Note:** `#[derive(Selectable)]` automatically generates both `Selectable` and `sqlx::FromRow` implementations. The returned type's `COLUMN_NAMES` will be used in the SELECT clause.
 
 ### INSERT
 
@@ -98,6 +112,8 @@ let pks = User::insert_many(vec![
 
 ### UPDATE
 
+#### Query Builder Style
+
 ```rust
 // Type-safe update - must have both SET and FILTER
 let rows = User::update_query()
@@ -109,6 +125,16 @@ let rows = User::update_query()
 ```
 
 **Note:** `UpdateBuilder` uses type-state pattern to ensure you must call both `.set()` and `.filter()` before `.execute()`. This prevents accidental updates without conditions.
+
+#### Active Record Style
+
+```rust
+// Fetch entity, modify, then save
+let mut user = User::fetch_one_by_pk(&1, &db).await?;
+user.name = "New Name".to_string();
+user.email = "new@email.com".to_string();
+user.update(&db).await?;  // Updates all non-PK fields
+```
 
 ### DELETE
 
@@ -150,6 +176,14 @@ User::COLUMNS.deleted_at.is_not_null() // deleted_at IS NOT NULL
 let expr = User::COLUMNS.id.eq(1) & User::COLUMNS.name.like("John%");  // AND
 let expr = User::COLUMNS.id.eq(1) | User::COLUMNS.id.eq(2);            // OR
 ```
+
+## Traits Overview
+
+| Trait | Description | Derive Macro |
+|-------|-------------|--------------|
+| `Selectable` | Lightweight trait with `COLUMN_NAMES` for SELECT queries | `#[derive(Selectable)]` |
+| `Domain` | Full CRUD operations, inherits `Selectable` | `#[derive(Domain)]` |
+| `Creatable` | For INSERT data structures | `#[derive(Creatable)]` |
 
 ## Custom SQL with `#[sql]`
 

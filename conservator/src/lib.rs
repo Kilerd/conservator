@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-pub use conservator_macro::{auto, sql, Creatable, Domain};
+pub use conservator_macro::{auto, sql, Creatable, Domain, Selectable};
 
 mod field;
 mod value;
@@ -23,12 +23,19 @@ pub struct ExistsRow {
     pub exists: Option<bool>,
 }
 
-#[async_trait]
-pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> {
-    const PK_FIELD_NAME: &'static str;
-    const TABLE_NAME: &'static str;
+/// 轻量级 trait，用于 SELECT 返回类型
+/// 
+/// 实现此 trait 的类型可以作为 `SelectBuilder.returning::<T>()` 的目标类型。
+/// `#[derive(Selectable)]` 会自动生成此 trait 和 `sqlx::FromRow` 的实现。
+pub trait Selectable: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> {
     /// 所有列名（用于 SELECT 语句）
     const COLUMN_NAMES: &'static [&'static str];
+}
+
+#[async_trait]
+pub trait Domain: Selectable {
+    const PK_FIELD_NAME: &'static str;
+    const TABLE_NAME: &'static str;
 
     type PrimaryKey: IntoValue + Copy + Send + Sync;
 
@@ -85,12 +92,13 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
         DeleteBuilder::<Self>::new().filter(pk_field.eq(*pk)).execute(executor).await
     }
 
+    /// 更新实体到数据库
+    /// 
+    /// 此方法由 `#[derive(Domain)]` 宏生成具体实现
     async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        _entity: Self,
-        _executor: E,
-    ) -> Result<(), ::sqlx::Error> {
-        unimplemented!()
-    }
+        &self,
+        executor: E,
+    ) -> Result<(), ::sqlx::Error>;
 }
 
 pub trait Creatable: Send + Sized {

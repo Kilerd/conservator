@@ -118,6 +118,10 @@ pub(crate) fn handler(
 
     let update_sql = update_sql(&crud_opts.table, &pk_field_name, &non_pk_field_names);
 
+    // 生成 FromRow 的字段名
+    let field_idents: Vec<_> = all_fields.iter().map(|(ident, _, _)| ident.clone()).collect();
+    let field_names_str: Vec<String> = all_fields.iter().map(|(ident, _, _)| ident.to_string()).collect();
+
     let ret = quote! {
         /// 包含 #ident 所有字段元信息的结构体
         #[derive(Debug, Clone, Copy)]
@@ -131,24 +135,41 @@ pub(crate) fn handler(
                 #(#columns_init),*
             };
         }
+
+        // 实现 Selectable trait
+        impl ::conservator::Selectable for #ident {
+            const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
+        }
+
+        // 实现 FromRow trait
+        impl<'r> ::sqlx::FromRow<'r, ::sqlx::postgres::PgRow> for #ident {
+            fn from_row(row: &'r ::sqlx::postgres::PgRow) -> Result<Self, ::sqlx::Error> {
+                use ::sqlx::Row;
+                Ok(Self {
+                    #(#field_idents: row.try_get(#field_names_str)?),*
+                })
+            }
+        }
     
         #[::async_trait::async_trait]
         impl ::conservator::Domain for #ident {
-                const PK_FIELD_NAME: &'static str = #pk_field_name;
-                const TABLE_NAME: &'static str = #table_name;
-                const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
-    
-                type PrimaryKey = #pk_field_type;
+            const PK_FIELD_NAME: &'static str = #pk_field_name;
+            const TABLE_NAME: &'static str = #table_name;
 
-                async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(entity:Self, executor: E) ->Result<(), ::sqlx::Error> {
-                    sqlx::query(#update_sql)
-                        #(.bind(entity. #non_pk_field_names))*
-                        .bind(entity. #pk_field_ident)
-                        .execute(executor)
-                        .await?;
-                    Ok(())
-                }
+            type PrimaryKey = #pk_field_type;
+
+            async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+                &self,
+                executor: E,
+            ) -> Result<(), ::sqlx::Error> {
+                ::sqlx::query(#update_sql)
+                    #(.bind(&self.#non_pk_field_names))*
+                    .bind(&self.#pk_field_ident)
+                    .execute(executor)
+                    .await?;
+                Ok(())
             }
+        }
     
         };
         Ok(ret)

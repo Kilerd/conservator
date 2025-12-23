@@ -1,7 +1,7 @@
 // 测试：InsertBuilder 基本用法
-use conservator::{Creatable, Domain, FromRow};
+use conservator::{Creatable, Domain};
 
-#[derive(Debug, Domain, FromRow)]
+#[derive(Debug, Domain)]
 #[domain(table = "users")]
 pub struct User {
     #[domain(primary_key)]

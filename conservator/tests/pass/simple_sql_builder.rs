@@ -1,6 +1,6 @@
-use conservator::{Domain, FromRow, SelectBuilder};
+use conservator::{Domain, SelectBuilder};
 
-#[derive(Debug, Domain, FromRow)]
+#[derive(Debug, Domain)]
 #[domain(table = "users")]
 pub struct User {
     #[domain(primary_key)]

@@ -1,7 +1,7 @@
 // 测试：设置了 filter 的 UpdateBuilder 可以正常 build 和使用
-use conservator::{Domain, FromRow};
+use conservator::Domain;
 
-#[derive(Debug, Domain, FromRow)]
+#[derive(Debug, Domain)]
 #[domain(table = "users")]
 pub struct User {
     #[domain(primary_key)]

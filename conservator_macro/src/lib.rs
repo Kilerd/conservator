@@ -5,6 +5,7 @@ mod authorization;
 mod auto;
 mod creatable;
 mod domain;
+mod selectable;
 mod sql;
 
 #[proc_macro_derive(Domain, attributes(domain))]
@@ -12,6 +13,29 @@ mod sql;
 pub fn derive_domain_fn(input: TokenStream) -> TokenStream {
     let stream2 = proc_macro2::TokenStream::from(input);
     match domain::handler(stream2) {
+        Ok(stream) => proc_macro::TokenStream::from(stream),
+        Err((span, msg)) => abort! {span, msg},
+    }
+}
+
+/// 派生 Selectable trait
+/// 
+/// 自动生成 `Selectable` 和 `sqlx::FromRow` 的实现。
+/// 用于定义可以作为 `SelectBuilder.returning::<T>()` 目标的投影类型。
+/// 
+/// # Example
+/// ```ignore
+/// #[derive(Selectable)]
+/// struct UserSummary {
+///     id: i32,
+///     name: String,
+/// }
+/// ```
+#[proc_macro_derive(Selectable)]
+#[proc_macro_error]
+pub fn derive_selectable_fn(input: TokenStream) -> TokenStream {
+    let stream2 = proc_macro2::TokenStream::from(input);
+    match selectable::handler(stream2) {
         Ok(stream) => proc_macro::TokenStream::from(stream),
         Err((span, msg)) => abort! {span, msg},
     }
