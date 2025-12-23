@@ -15,14 +15,19 @@ impl<T: Domain, const FILTER_SET: bool> DeleteBuilder<T, FILTER_SET> {
     }
 
     pub fn filter(self, expr: Expression) -> DeleteBuilder<T, true> {
+        let updated_expr = match self.filter_expr {
+            Some(filter_expr) => filter_expr & expr,
+            None => expr,
+        };
         DeleteBuilder::<T, true> {
-            filter_expr: Some(expr),
+            filter_expr: Some(updated_expr),
             _phantom: self._phantom,
         }
     }
 }
 
 impl<T: Domain> DeleteBuilder<T, true> {
+    
     pub fn build(self) -> SqlResult {
         let mut sql = String::new();
         sql.push_str("DELETE FROM ");
