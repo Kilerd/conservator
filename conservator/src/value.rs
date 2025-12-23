@@ -242,3 +242,13 @@ impl IntoValue for serde_json::Value {
     }
 }
 
+// Option 类型
+impl<T: IntoValue> IntoValue for Option<T> {
+    fn into_value(self) -> Value {
+        match self {
+            Some(v) => v.into_value(),
+            None => Value::None,
+        }
+    }
+}
+

@@ -126,7 +126,7 @@ jobs:
         run: docker info
 
       - name: Run integration tests
-        run: cargo test --test integration -- --test-threads=1
+        run: cargo test --test integration -- --test-threads=100
 
   trybuild:
     name: Compile Tests

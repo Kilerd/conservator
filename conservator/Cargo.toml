@@ -21,7 +21,7 @@ sqlx = { version = "0.7", features = [
 conservator_macro = { version = "0.1", path = "../conservator_macro" }
 chrono = "0.4"
 bigdecimal = "0.4"
-uuid = "1"
+uuid = { version = "1", features = ["v4"] }
 serde_json = "1"
 
 

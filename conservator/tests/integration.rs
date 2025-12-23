@@ -1,5 +1,7 @@
-use conservator::{Creatable, Domain, Selectable};
+use conservator::{Creatable, Domain, Order, Selectable};
 use sqlx::PgPool;
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use std::sync::OnceLock;
 use testcontainers::{clients::Cli, Container};
 use testcontainers_modules::postgres::Postgres;
 
@@ -12,12 +14,18 @@ pub struct User {
     pub id: i32,
     pub name: String,
     pub email: String,
+    pub age: i32,
+    pub score: f64,
+    pub is_active: bool,
 }
 
 #[derive(Debug, Creatable)]
 pub struct CreateUser {
     pub name: String,
     pub email: String,
+    pub age: i32,
+    pub score: f64,
+    pub is_active: bool,
 }
 
 #[derive(Debug, Selectable)]
@@ -26,239 +34,1387 @@ pub struct UserSummary {
     pub name: String,
 }
 
-// ========== 测试设置 ==========
+#[derive(Debug, Selectable)]
+pub struct UserWithScore {
+    pub id: i32,
+    pub name: String,
+    pub score: f64,
+}
 
-async fn setup_db(docker: &Cli) -> (Container<'_, Postgres>, PgPool) {
-    let container = docker.run(Postgres::default());
+// 带 nullable 字段的实体（用于 IS NULL 测试）
+#[derive(Debug, Domain)]
+#[domain(table = "profiles")]
+pub struct Profile {
+    #[domain(primary_key)]
+    pub id: i32,
+    pub user_id: i32,
+    pub bio: Option<String>,
+    pub website: Option<String>,
+}
+
+#[derive(Debug, Creatable)]
+pub struct CreateProfile {
+    pub user_id: i32,
+    pub bio: Option<String>,
+    pub website: Option<String>,
+}
+
+// 多数据类型实体
+#[derive(Debug, Domain)]
+#[domain(table = "products")]
+pub struct Product {
+    #[domain(primary_key)]
+    pub id: i32,
+    pub uuid: uuid::Uuid,
+    pub name: String,
+    pub price: sqlx::types::BigDecimal,
+    pub metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Creatable)]
+pub struct CreateProduct {
+    pub uuid: uuid::Uuid,
+    pub name: String,
+    pub price: sqlx::types::BigDecimal,
+    pub metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ========== 共享容器设置 ==========
+
+static DOCKER: OnceLock<Cli> = OnceLock::new();
+static CONTAINER: OnceLock<Container<'static, Postgres>> = OnceLock::new();
+static DB_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+fn get_container() -> &'static Container<'static, Postgres> {
+    let docker = DOCKER.get_or_init(Cli::default);
+    CONTAINER.get_or_init(|| docker.run(Postgres::default()))
+}
+
+/// 为每个测试创建独立的数据库
+async fn setup_test_db() -> PgPool {
+    let container = get_container();
     let port = container.get_host_port_ipv4(5432);
-    let url = format!("postgres://postgres:postgres@localhost:{}/postgres", port);
-    
-    let pool = PgPool::connect(&url).await.unwrap();
-    
+
+    // 生成唯一数据库名
+    let db_id = DB_COUNTER.fetch_add(1, AtomicOrdering::SeqCst);
+    let db_name = format!("test_db_{}", db_id);
+
+    // 连接到默认 postgres 数据库创建新数据库
+    let admin_url = format!("postgres://postgres:postgres@localhost:{}/postgres", port);
+    let admin_pool = PgPool::connect(&admin_url).await.unwrap();
+
+    sqlx::query(&format!("CREATE DATABASE {}", db_name))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+    admin_pool.close().await;
+
+    // 连接到新创建的数据库
+    let db_url = format!(
+        "postgres://postgres:postgres@localhost:{}/{}",
+        port, db_name
+    );
+    let pool = PgPool::connect(&db_url).await.unwrap();
+
     // 创建测试表
-    sqlx::query(r#"
+    sqlx::query(
+        r#"
         CREATE TABLE users (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL
+            email VARCHAR(255) NOT NULL,
+            age INTEGER NOT NULL,
+            score DOUBLE PRECISION NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT true
         )
-    "#)
+    "#,
+    )
     .execute(&pool)
     .await
     .unwrap();
-    
-    (container, pool)
+
+    sqlx::query(
+        r#"
+        CREATE TABLE profiles (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            bio TEXT,
+            website VARCHAR(255)
+        )
+    "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE products (
+            id SERIAL PRIMARY KEY,
+            uuid UUID NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            price NUMERIC(10, 2) NOT NULL,
+            metadata JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    pool
 }
 
-// ========== CRUD 测试 ==========
+/// 批量插入测试用户
+async fn insert_test_users(pool: &PgPool) -> Vec<i32> {
+    let mut pks = Vec::new();
+    let users = vec![
+        CreateUser {
+            name: "Alice".into(),
+            email: "alice@test.com".into(),
+            age: 25,
+            score: 85.5,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Bob".into(),
+            email: "bob@test.com".into(),
+            age: 30,
+            score: 92.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Charlie".into(),
+            email: "charlie@example.com".into(),
+            age: 35,
+            score: 70.0,
+            is_active: false,
+        },
+        CreateUser {
+            name: "Diana".into(),
+            email: "diana@test.com".into(),
+            age: 22,
+            score: 78.5,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Eve".into(),
+            email: "eve@example.com".into(),
+            age: 28,
+            score: 95.0,
+            is_active: true,
+        },
+    ];
+
+    for user in users {
+        let pk = user.insert::<User>().returning_pk(pool).await.unwrap();
+        pks.push(pk);
+    }
+    pks
+}
+
+// ==========================================
+// CRUD 基础测试
+// ==========================================
 
 #[tokio::test]
 async fn test_insert_returning_pk() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
+    let pool = setup_test_db().await;
+
     let pk = CreateUser {
         name: "test".into(),
         email: "test@example.com".into(),
+        age: 25,
+        score: 80.0,
+        is_active: true,
     }
     .insert::<User>()
     .returning_pk(&pool)
     .await
     .unwrap();
-    
+
     assert!(pk > 0);
 }
 
 #[tokio::test]
 async fn test_insert_returning_entity() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
+    let pool = setup_test_db().await;
+
     let user = CreateUser {
         name: "test".into(),
         email: "test@example.com".into(),
+        age: 30,
+        score: 88.0,
+        is_active: false,
     }
     .insert::<User>()
     .returning_entity(&pool)
     .await
     .unwrap();
-    
+
     assert_eq!(user.name, "test");
     assert_eq!(user.email, "test@example.com");
+    assert_eq!(user.age, 30);
+    assert!(!user.is_active);
 }
 
 #[tokio::test]
 async fn test_fetch_by_pk() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    let pk = CreateUser { name: "find_me".into(), email: "a@b.com".into() }
-        .insert::<User>()
-        .returning_pk(&pool)
-        .await
-        .unwrap();
-    
+    let pool = setup_test_db().await;
+
+    let pk = CreateUser {
+        name: "find_me".into(),
+        email: "a@b.com".into(),
+        age: 20,
+        score: 100.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
     let user = User::fetch_one_by_pk(&pk, &pool).await.unwrap();
     assert_eq!(user.name, "find_me");
-    
+
     let optional = User::find_by_pk(&pk, &pool).await.unwrap();
     assert!(optional.is_some());
 }
 
 #[tokio::test]
 async fn test_entity_update() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    let mut user = CreateUser { name: "old".into(), email: "old@test.com".into() }
-        .insert::<User>()
-        .returning_entity(&pool)
-        .await
-        .unwrap();
-    
+    let pool = setup_test_db().await;
+
+    let mut user = CreateUser {
+        name: "old".into(),
+        email: "old@test.com".into(),
+        age: 20,
+        score: 50.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_entity(&pool)
+    .await
+    .unwrap();
+
     user.name = "new".to_string();
+    user.age = 21;
     user.update(&pool).await.unwrap();
-    
+
     let updated = User::fetch_one_by_pk(&user.id, &pool).await.unwrap();
     assert_eq!(updated.name, "new");
+    assert_eq!(updated.age, 21);
 }
 
-// ========== SelectBuilder 测试 ==========
+// ==========================================
+// 表达式操作符测试
+// ==========================================
 
 #[tokio::test]
-async fn test_select_with_filter() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    // 插入测试数据
-    for i in 1..=5 {
-        CreateUser { name: format!("user{}", i), email: format!("{}@test.com", i) }
-            .insert::<User>()
-            .returning_pk(&pool)
-            .await
-            .unwrap();
-    }
-    
+async fn test_eq_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
     let users = User::select()
-        .filter(User::COLUMNS.name.like("user%"))
+        .filter(User::COLUMNS.name.eq("Alice".to_string()))
         .all(&pool)
         .await
         .unwrap();
-    
-    assert_eq!(users.len(), 5);
+
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].name, "Alice");
 }
 
 #[tokio::test]
-async fn test_select_with_limit_offset() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    for i in 1..=10 {
-        CreateUser { name: format!("user{}", i), email: format!("{}@test.com", i) }
-            .insert::<User>()
-            .returning_pk(&pool)
-            .await
-            .unwrap();
-    }
-    
+async fn test_ne_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
     let users = User::select()
-        .limit(3)
-        .offset(2)
+        .filter(User::COLUMNS.name.ne("Alice".to_string()))
         .all(&pool)
         .await
         .unwrap();
-    
+
+    assert_eq!(users.len(), 4);
+    assert!(users.iter().all(|u| u.name != "Alice"));
+}
+
+#[tokio::test]
+async fn test_gt_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.gt(28))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30) and Charlie(35)
+    assert_eq!(users.len(), 2);
+    assert!(users.iter().all(|u| u.age > 28));
+}
+
+#[tokio::test]
+async fn test_lt_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.lt(25))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Diana(22)
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].name, "Diana");
+}
+
+#[tokio::test]
+async fn test_gte_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.gte(30))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30) and Charlie(35)
+    assert_eq!(users.len(), 2);
+}
+
+#[tokio::test]
+async fn test_lte_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.lte(25))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Alice(25), Diana(22)
+    assert_eq!(users.len(), 2);
+}
+
+#[tokio::test]
+async fn test_between_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.between(26, 32))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30), Eve(28)
+    assert_eq!(users.len(), 2);
+    assert!(users.iter().all(|u| u.age >= 26 && u.age <= 32));
+}
+
+#[tokio::test]
+async fn test_in_list_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.name.in_list(vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "Eve".to_string(),
+        ]))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users.len(), 3);
+    let names: Vec<_> = users.iter().map(|u| u.name.as_str()).collect();
+    assert!(names.contains(&"Alice"));
+    assert!(names.contains(&"Bob"));
+    assert!(names.contains(&"Eve"));
+}
+
+#[tokio::test]
+async fn test_in_list_with_integers() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.age.in_list(vec![25, 28, 35]))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Alice(25), Eve(28), Charlie(35)
     assert_eq!(users.len(), 3);
 }
 
 #[tokio::test]
-async fn test_select_returning_projection() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    CreateUser { name: "test".into(), email: "test@test.com".into() }
-        .insert::<User>()
-        .returning_pk(&pool)
+async fn test_is_null_operator() {
+    let pool = setup_test_db().await;
+
+    // Insert profiles with nullable fields
+    CreateProfile {
+        user_id: 1,
+        bio: Some("Hello".into()),
+        website: None,
+    }
+    .insert::<Profile>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    CreateProfile {
+        user_id: 2,
+        bio: None,
+        website: Some("https://example.com".into()),
+    }
+    .insert::<Profile>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let profiles = Profile::select()
+        .filter(Profile::COLUMNS.bio.is_null())
+        .all(&pool)
         .await
         .unwrap();
-    
+
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].user_id, 2);
+}
+
+#[tokio::test]
+async fn test_is_not_null_operator() {
+    let pool = setup_test_db().await;
+
+    CreateProfile {
+        user_id: 1,
+        bio: Some("Hello".into()),
+        website: None,
+    }
+    .insert::<Profile>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    CreateProfile {
+        user_id: 2,
+        bio: None,
+        website: Some("https://example.com".into()),
+    }
+    .insert::<Profile>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let profiles = Profile::select()
+        .filter(Profile::COLUMNS.bio.is_not_null())
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(profiles.len(), 1);
+    assert!(profiles[0].bio.is_some());
+}
+
+#[tokio::test]
+async fn test_like_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Users with @test.com email
+    let users = User::select()
+        .filter(User::COLUMNS.email.like("%@test.com"))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users.len(), 3); // Alice, Bob, Diana
+}
+
+#[tokio::test]
+async fn test_like_operator_prefix() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.name.like("A%"))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].name, "Alice");
+}
+
+// ==========================================
+// 复杂表达式组合测试
+// ==========================================
+
+#[tokio::test]
+async fn test_and_combination() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.is_active.eq(true).and(User::COLUMNS.age.gt(25)))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30), Eve(28) - active and age > 25
+    assert_eq!(users.len(), 2);
+    assert!(users.iter().all(|u| u.is_active && u.age > 25));
+}
+
+#[tokio::test]
+async fn test_or_combination() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(
+            User::COLUMNS
+                .name
+                .eq("Alice".to_string())
+                .or(User::COLUMNS.name.eq("Bob".to_string())),
+        )
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users.len(), 2);
+}
+
+#[tokio::test]
+async fn test_bitand_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Using & operator instead of .and()
+    let users = User::select()
+        .filter(User::COLUMNS.is_active.eq(true) & User::COLUMNS.score.gt(90.0))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(92.0), Eve(95.0)
+    assert_eq!(users.len(), 2);
+}
+
+#[tokio::test]
+async fn test_bitor_operator() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Using | operator instead of .or()
+    let users = User::select()
+        .filter(User::COLUMNS.age.lt(23) | User::COLUMNS.age.gt(32))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Diana(22), Charlie(35)
+    assert_eq!(users.len(), 2);
+}
+
+#[tokio::test]
+async fn test_nested_expressions() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // (is_active = true AND age > 25) OR (score > 90)
+    let users = User::select()
+        .filter(
+            (User::COLUMNS.is_active.eq(true) & User::COLUMNS.age.gt(25))
+                | User::COLUMNS.score.gt(90.0),
+        )
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(active, 30, 92), Eve(active, 28, 95) match first condition
+    // Eve also matches score > 90
+    assert!(users.len() >= 2);
+}
+
+#[tokio::test]
+async fn test_multiple_filter_calls() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Multiple .filter() calls should AND together
+    let users = User::select()
+        .filter(User::COLUMNS.is_active.eq(true))
+        .filter(User::COLUMNS.age.gt(25))
+        .filter(User::COLUMNS.score.gt(80.0))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30, 92.0), Eve(28, 95.0)
+    assert_eq!(users.len(), 2);
+}
+
+// ==========================================
+// 排序测试
+// ==========================================
+
+#[tokio::test]
+async fn test_order_by_asc() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .order_by(User::COLUMNS.age, Order::Asc)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    let ages: Vec<i32> = users.iter().map(|u| u.age).collect();
+    assert_eq!(ages, vec![22, 25, 28, 30, 35]);
+}
+
+#[tokio::test]
+async fn test_order_by_desc() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .order_by(User::COLUMNS.age, Order::Desc)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    let ages: Vec<i32> = users.iter().map(|u| u.age).collect();
+    assert_eq!(ages, vec![35, 30, 28, 25, 22]);
+}
+
+#[tokio::test]
+async fn test_order_by_multiple_fields() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .order_by(User::COLUMNS.is_active, Order::Desc) // active first
+        .order_by(User::COLUMNS.name, Order::Asc) // then by name
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Active users first (alphabetically): Alice, Bob, Diana, Eve
+    // Then inactive: Charlie
+    assert_eq!(users[0].name, "Alice");
+    assert_eq!(users[users.len() - 1].name, "Charlie");
+}
+
+#[tokio::test]
+async fn test_order_by_with_limit() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Top 3 users by score
+    let users = User::select()
+        .order_by(User::COLUMNS.score, Order::Desc)
+        .limit(3)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(users.len(), 3);
+    assert_eq!(users[0].name, "Eve"); // 95.0
+    assert_eq!(users[1].name, "Bob"); // 92.0
+    assert_eq!(users[2].name, "Alice"); // 85.5
+}
+
+// ==========================================
+// 分页测试
+// ==========================================
+
+#[tokio::test]
+async fn test_limit_offset_pagination() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Page 1 (first 2)
+    let page1 = User::select()
+        .order_by(User::COLUMNS.id, Order::Asc)
+        .limit(2)
+        .offset(0)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Page 2 (next 2)
+    let page2 = User::select()
+        .order_by(User::COLUMNS.id, Order::Asc)
+        .limit(2)
+        .offset(2)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Page 3 (last 1)
+    let page3 = User::select()
+        .order_by(User::COLUMNS.id, Order::Asc)
+        .limit(2)
+        .offset(4)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page2.len(), 2);
+    assert_eq!(page3.len(), 1);
+
+    // Ensure no overlap
+    let all_ids: Vec<i32> = page1
+        .iter()
+        .chain(page2.iter())
+        .chain(page3.iter())
+        .map(|u| u.id)
+        .collect();
+    assert_eq!(all_ids.len(), 5);
+}
+
+// ==========================================
+// 边界条件测试
+// ==========================================
+
+#[tokio::test]
+async fn test_empty_result() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let users = User::select()
+        .filter(User::COLUMNS.name.eq("NonExistent".to_string()))
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert!(users.is_empty());
+}
+
+#[tokio::test]
+async fn test_optional_not_found() {
+    let pool = setup_test_db().await;
+
+    let result = User::find_by_pk(&99999, &pool).await.unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test_one_not_found_error() {
+    let pool = setup_test_db().await;
+
+    let result = User::select()
+        .filter(User::COLUMNS.name.eq("NonExistent".to_string()))
+        .one(&pool)
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_optional_found() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let result = User::select()
+        .filter(User::COLUMNS.name.eq("Alice".to_string()))
+        .optional(&pool)
+        .await
+        .unwrap();
+
+    assert!(result.is_some());
+    assert_eq!(result.unwrap().name, "Alice");
+}
+
+#[tokio::test]
+async fn test_optional_not_found_returns_none() {
+    let pool = setup_test_db().await;
+
+    let result = User::select()
+        .filter(User::COLUMNS.name.eq("NonExistent".to_string()))
+        .optional(&pool)
+        .await
+        .unwrap();
+
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test_special_characters_in_string() {
+    let pool = setup_test_db().await;
+
+    let pk = CreateUser {
+        name: "O'Brien".into(),
+        email: "o'brien@test.com".into(),
+        age: 40,
+        score: 75.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let user = User::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(user.name, "O'Brien");
+}
+
+#[tokio::test]
+async fn test_unicode_characters() {
+    let pool = setup_test_db().await;
+
+    let pk = CreateUser {
+        name: "张三".into(),
+        email: "zhangsan@test.com".into(),
+        age: 25,
+        score: 88.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let user = User::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(user.name, "张三");
+}
+
+#[tokio::test]
+async fn test_empty_string() {
+    let pool = setup_test_db().await;
+
+    let pk = CreateUser {
+        name: "".into(),
+        email: "empty@test.com".into(),
+        age: 0,
+        score: 0.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let user = User::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(user.name, "");
+}
+
+// ==========================================
+// 多数据类型测试
+// ==========================================
+
+#[tokio::test]
+async fn test_uuid_type() {
+    let pool = setup_test_db().await;
+
+    let uuid = uuid::Uuid::new_v4();
+    let pk = CreateProduct {
+        uuid,
+        name: "Widget".into(),
+        price: "99.99".parse().unwrap(),
+        metadata: serde_json::json!({"category": "electronics"}),
+        created_at: chrono::Utc::now(),
+    }
+    .insert::<Product>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let product = Product::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(product.uuid, uuid);
+}
+
+#[tokio::test]
+async fn test_bigdecimal_type() {
+    let pool = setup_test_db().await;
+
+    let price: sqlx::types::BigDecimal = "1234.56".parse().unwrap();
+    let pk = CreateProduct {
+        uuid: uuid::Uuid::new_v4(),
+        name: "Expensive Item".into(),
+        price: price.clone(),
+        metadata: serde_json::json!({}),
+        created_at: chrono::Utc::now(),
+    }
+    .insert::<Product>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let product = Product::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(product.price, price);
+}
+
+#[tokio::test]
+async fn test_json_type() {
+    let pool = setup_test_db().await;
+
+    let metadata = serde_json::json!({
+        "tags": ["sale", "featured"],
+        "dimensions": {
+            "width": 10,
+            "height": 20
+        }
+    });
+
+    let pk = CreateProduct {
+        uuid: uuid::Uuid::new_v4(),
+        name: "JSON Test".into(),
+        price: "50.00".parse().unwrap(),
+        metadata: metadata.clone(),
+        created_at: chrono::Utc::now(),
+    }
+    .insert::<Product>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let product = Product::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    assert_eq!(product.metadata, metadata);
+}
+
+#[tokio::test]
+async fn test_datetime_type() {
+    let pool = setup_test_db().await;
+
+    let created_at = chrono::Utc::now();
+    let pk = CreateProduct {
+        uuid: uuid::Uuid::new_v4(),
+        name: "DateTime Test".into(),
+        price: "10.00".parse().unwrap(),
+        metadata: serde_json::json!({}),
+        created_at,
+    }
+    .insert::<Product>()
+    .returning_pk(&pool)
+    .await
+    .unwrap();
+
+    let product = Product::fetch_one_by_pk(&pk, &pool).await.unwrap();
+    // Compare with some tolerance for database precision
+    let diff = (product.created_at - created_at).num_milliseconds().abs();
+    assert!(diff < 1000); // Within 1 second
+}
+
+// ==========================================
+// Projection 测试
+// ==========================================
+
+#[tokio::test]
+async fn test_returning_projection() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
     let summaries: Vec<UserSummary> = User::select()
         .returning::<UserSummary>()
         .all(&pool)
         .await
         .unwrap();
-    
-    assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].name, "test");
+
+    assert_eq!(summaries.len(), 5);
+    // UserSummary only has id and name
+    assert!(!summaries[0].name.is_empty());
 }
 
-// ========== DeleteBuilder 测试 ==========
-
 #[tokio::test]
-async fn test_delete_with_filter() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    let pk = CreateUser { name: "to_delete".into(), email: "del@test.com".into() }
-        .insert::<User>()
-        .returning_pk(&pool)
+async fn test_returning_with_filter() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let summaries: Vec<UserWithScore> = User::select()
+        .filter(User::COLUMNS.score.gt(80.0))
+        .returning::<UserWithScore>()
+        .order_by(User::COLUMNS.score, Order::Desc)
+        .all(&pool)
         .await
         .unwrap();
-    
+
+    assert_eq!(summaries.len(), 3); // Eve(95), Bob(92), Alice(85.5)
+    assert_eq!(summaries[0].name, "Eve"); // highest score
+}
+
+// ==========================================
+// Delete 测试
+// ==========================================
+
+#[tokio::test]
+async fn test_delete_single() {
+    let pool = setup_test_db().await;
+    let pks = insert_test_users(&pool).await;
+
     let rows = User::delete()
-        .filter(User::COLUMNS.id.eq(pk))
+        .filter(User::COLUMNS.id.eq(pks[0]))
         .execute(&pool)
         .await
         .unwrap();
-    
+
     assert_eq!(rows, 1);
-    assert!(User::find_by_pk(&pk, &pool).await.unwrap().is_none());
+    assert!(User::find_by_pk(&pks[0], &pool).await.unwrap().is_none());
 }
 
-// ========== UpdateBuilder 测试 ==========
-
 #[tokio::test]
-async fn test_update_query_builder() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
-    let pk = CreateUser { name: "old".into(), email: "old@test.com".into() }
-        .insert::<User>()
-        .returning_pk(&pool)
+async fn test_delete_multiple() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let rows = User::delete()
+        .filter(User::COLUMNS.is_active.eq(false))
+        .execute(&pool)
         .await
         .unwrap();
-    
+
+    assert_eq!(rows, 1); // Only Charlie is inactive
+
+    let remaining = User::select().all(&pool).await.unwrap();
+    assert_eq!(remaining.len(), 4);
+}
+
+#[tokio::test]
+async fn test_delete_with_complex_filter() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let rows = User::delete()
+        .filter(User::COLUMNS.age.lt(23) | User::COLUMNS.age.gt(32))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Diana(22) and Charlie(35)
+    assert_eq!(rows, 2);
+}
+
+// ==========================================
+// Update 测试
+// ==========================================
+
+#[tokio::test]
+async fn test_update_single_field() {
+    let pool = setup_test_db().await;
+    let pks = insert_test_users(&pool).await;
+
     let rows = User::update_query()
-        .set(User::COLUMNS.name, "new".to_string())
-        .set(User::COLUMNS.email, "new@test.com".to_string())
-        .filter(User::COLUMNS.id.eq(pk))
+        .set(User::COLUMNS.name, "Updated Alice".to_string())
+        .filter(User::COLUMNS.id.eq(pks[0]))
         .execute(&pool)
         .await
         .unwrap();
-    
+
     assert_eq!(rows, 1);
-    
-    let updated = User::fetch_one_by_pk(&pk, &pool).await.unwrap();
-    assert_eq!(updated.name, "new");
-    assert_eq!(updated.email, "new@test.com");
+
+    let user = User::fetch_one_by_pk(&pks[0], &pool).await.unwrap();
+    assert_eq!(user.name, "Updated Alice");
 }
 
-// ========== 批量操作测试 ==========
+#[tokio::test]
+async fn test_update_multiple_fields() {
+    let pool = setup_test_db().await;
+    let pks = insert_test_users(&pool).await;
+
+    let rows = User::update_query()
+        .set(User::COLUMNS.name, "New Name".to_string())
+        .set(User::COLUMNS.email, "new@email.com".to_string())
+        .set(User::COLUMNS.age, 99)
+        .filter(User::COLUMNS.id.eq(pks[0]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows, 1);
+
+    let user = User::fetch_one_by_pk(&pks[0], &pool).await.unwrap();
+    assert_eq!(user.name, "New Name");
+    assert_eq!(user.email, "new@email.com");
+    assert_eq!(user.age, 99);
+}
 
 #[tokio::test]
-async fn test_insert_many() {
-    let docker = Cli::default();
-    let (_container, pool) = setup_db(&docker).await;
-    
+async fn test_update_multiple_rows() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    let rows = User::update_query()
+        .set(User::COLUMNS.is_active, false)
+        .filter(User::COLUMNS.age.gt(28))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Bob(30), Charlie(35)
+    assert_eq!(rows, 2);
+
+    let inactive = User::select()
+        .filter(User::COLUMNS.is_active.eq(false))
+        .all(&pool)
+        .await
+        .unwrap();
+    // Charlie was already inactive + Bob now inactive = at least 2
+    assert!(inactive.len() >= 2);
+}
+
+// ==========================================
+// 批量操作测试
+// ==========================================
+
+#[tokio::test]
+async fn test_insert_many_returning_pks() {
+    let pool = setup_test_db().await;
+
     let pks = User::insert_many(vec![
-        CreateUser { name: "a".into(), email: "a@test.com".into() },
-        CreateUser { name: "b".into(), email: "b@test.com".into() },
-        CreateUser { name: "c".into(), email: "c@test.com".into() },
+        CreateUser {
+            name: "a".into(),
+            email: "a@test.com".into(),
+            age: 20,
+            score: 60.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "b".into(),
+            email: "b@test.com".into(),
+            age: 21,
+            score: 61.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "c".into(),
+            email: "c@test.com".into(),
+            age: 22,
+            score: 62.0,
+            is_active: true,
+        },
     ])
     .returning_pk(&pool)
     .await
     .unwrap();
-    
+
     assert_eq!(pks.len(), 3);
+    assert!(pks[0] < pks[1] && pks[1] < pks[2]);
 }
 
+#[tokio::test]
+async fn test_insert_many_returning_entities() {
+    let pool = setup_test_db().await;
+
+    let users = User::insert_many(vec![
+        CreateUser {
+            name: "x".into(),
+            email: "x@test.com".into(),
+            age: 30,
+            score: 80.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "y".into(),
+            email: "y@test.com".into(),
+            age: 31,
+            score: 81.0,
+            is_active: false,
+        },
+    ])
+    .returning_entity(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(users.len(), 2);
+    assert_eq!(users[0].name, "x");
+    assert_eq!(users[1].name, "y");
+}
+
+// ==========================================
+// 事务测试
+// ==========================================
+
+#[tokio::test]
+async fn test_transaction_commit() {
+    let pool = setup_test_db().await;
+
+    let mut tx = pool.begin().await.unwrap();
+
+    let pk = CreateUser {
+        name: "tx_user".into(),
+        email: "tx@test.com".into(),
+        age: 25,
+        score: 70.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&mut *tx)
+    .await
+    .unwrap();
+
+    tx.commit().await.unwrap();
+
+    // Should be visible after commit
+    let user = User::find_by_pk(&pk, &pool).await.unwrap();
+    assert!(user.is_some());
+}
+
+#[tokio::test]
+async fn test_transaction_rollback() {
+    let pool = setup_test_db().await;
+
+    let mut tx = pool.begin().await.unwrap();
+
+    let pk = CreateUser {
+        name: "rollback_user".into(),
+        email: "rollback@test.com".into(),
+        age: 25,
+        score: 70.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&mut *tx)
+    .await
+    .unwrap();
+
+    tx.rollback().await.unwrap();
+
+    // Should NOT be visible after rollback
+    let user = User::find_by_pk(&pk, &pool).await.unwrap();
+    assert!(user.is_none());
+}
+
+#[tokio::test]
+async fn test_transaction_multiple_operations() {
+    let pool = setup_test_db().await;
+    let pks = insert_test_users(&pool).await;
+
+    let mut tx = pool.begin().await.unwrap();
+
+    // Update in transaction
+    User::update_query()
+        .set(User::COLUMNS.name, "TxUpdated".to_string())
+        .filter(User::COLUMNS.id.eq(pks[0]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // Delete in same transaction
+    User::delete()
+        .filter(User::COLUMNS.id.eq(pks[1]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // Insert in same transaction
+    CreateUser {
+        name: "TxNew".into(),
+        email: "txnew@test.com".into(),
+        age: 50,
+        score: 50.0,
+        is_active: true,
+    }
+    .insert::<User>()
+    .returning_pk(&mut *tx)
+    .await
+    .unwrap();
+
+    tx.commit().await.unwrap();
+
+    // Verify all changes
+    let updated = User::fetch_one_by_pk(&pks[0], &pool).await.unwrap();
+    assert_eq!(updated.name, "TxUpdated");
+
+    let deleted = User::find_by_pk(&pks[1], &pool).await.unwrap();
+    assert!(deleted.is_none());
+
+    let all = User::select().all(&pool).await.unwrap();
+    assert_eq!(all.len(), 5); // 5 original - 1 deleted + 1 new = 5
+}
+
+// ==========================================
+// 浮点数精度测试
+// ==========================================
+
+#[tokio::test]
+async fn test_float_comparison() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Test float equality (be careful with floating point)
+    let users = User::select()
+        .filter(User::COLUMNS.score.gte(85.0))
+        .filter(User::COLUMNS.score.lte(95.0))
+        .order_by(User::COLUMNS.score, Order::Asc)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    // Alice(85.5), Bob(92.0), Eve(95.0)
+    assert_eq!(users.len(), 3);
+}
+
+// ==========================================
+// 复合主键场景（通过复杂 filter 模拟）
+// ==========================================
+
+#[tokio::test]
+async fn test_composite_condition_as_unique_identifier() {
+    let pool = setup_test_db().await;
+    insert_test_users(&pool).await;
+
+    // Find user by name AND email (like a composite unique constraint)
+    let user = User::select()
+        .filter(
+            User::COLUMNS.name.eq("Alice".to_string())
+                & User::COLUMNS.email.eq("alice@test.com".to_string()),
+        )
+        .optional(&pool)
+        .await
+        .unwrap();
+
+    assert!(user.is_some());
+    assert_eq!(user.unwrap().age, 25);
+}
+
+// ==========================================
+// 大数据量测试
+// ==========================================
+
+#[tokio::test]
+async fn test_bulk_insert_and_query() {
+    let pool = setup_test_db().await;
+
+    // Insert 100 users
+    let mut users = Vec::new();
+    for i in 0..100 {
+        users.push(CreateUser {
+            name: format!("user_{}", i),
+            email: format!("user_{}@test.com", i),
+            age: 20 + (i % 50) as i32,
+            score: 50.0 + (i as f64),
+            is_active: i % 2 == 0,
+        });
+    }
+
+    let pks = User::insert_many(users).returning_pk(&pool).await.unwrap();
+    assert_eq!(pks.len(), 100);
+
+    // Query with complex conditions
+    let result = User::select()
+        .filter(User::COLUMNS.is_active.eq(true))
+        .filter(User::COLUMNS.age.between(30, 40))
+        .order_by(User::COLUMNS.score, Order::Desc)
+        .limit(10)
+        .all(&pool)
+        .await
+        .unwrap();
+
+    assert!(result.len() <= 10);
+    assert!(result.iter().all(|u| u.is_active && u.age >= 30 && u.age <= 40));
+}
