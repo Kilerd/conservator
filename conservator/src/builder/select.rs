@@ -261,7 +261,8 @@ impl<T: Domain, Returning: Domain> SelectBuilder<T, Returning> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expression::{Expression, Operator, Value};
+    use crate::expression::{Expression, Operator};
+    use crate::Value;
 
     // 模拟一个 Domain 实现用于测试
     #[derive(sqlx::FromRow)]

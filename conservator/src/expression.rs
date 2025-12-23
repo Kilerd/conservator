@@ -1,3 +1,9 @@
+//! SQL 表达式系统
+//!
+//! 提供类型安全的 SQL WHERE 子句构建。
+
+use crate::value::Value;
+
 /// 字段元信息（不带泛型，用于存储在 Expression 中）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldInfo {
@@ -76,143 +82,8 @@ impl Operator {
     }
 }
 
-/// 存储 SQL 参数值的枚举
-/// 
-/// 支持常见的数据库类型
-#[derive(Debug, Clone)]
-pub enum Value {
-    Bool(bool),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-    String(String),
-    Bytes(Vec<u8>),
-    /// 用于扩展其他类型
-    None,
-}
-
-impl Value {
-    /// 将 Value 绑定到 sqlx QueryAs 查询
-    pub fn bind_to<'q, O>(
-        self,
-        query: sqlx::query::QueryAs<
-            'q,
-            sqlx::Postgres,
-            O,
-            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-        >,
-    ) -> sqlx::query::QueryAs<
-        'q,
-        sqlx::Postgres,
-        O,
-        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-    >
-    where
-        O: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
-    {
-        match self {
-            Value::Bool(v) => query.bind(v),
-            Value::I16(v) => query.bind(v),
-            Value::I32(v) => query.bind(v),
-            Value::I64(v) => query.bind(v),
-            Value::F32(v) => query.bind(v),
-            Value::F64(v) => query.bind(v),
-            Value::String(v) => query.bind(v),
-            Value::Bytes(v) => query.bind(v),
-            Value::None => query,
-        }
-    }
-
-    /// 将 Value 绑定到 sqlx Query 查询（用于 DELETE/UPDATE 等不返回行的操作）
-    pub fn bind_to_query<'q>(
-        self,
-        query: sqlx::query::Query<
-            'q,
-            sqlx::Postgres,
-            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-        >,
-    ) -> sqlx::query::Query<
-        'q,
-        sqlx::Postgres,
-        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-    > {
-        match self {
-            Value::Bool(v) => query.bind(v),
-            Value::I16(v) => query.bind(v),
-            Value::I32(v) => query.bind(v),
-            Value::I64(v) => query.bind(v),
-            Value::F32(v) => query.bind(v),
-            Value::F64(v) => query.bind(v),
-            Value::String(v) => query.bind(v),
-            Value::Bytes(v) => query.bind(v),
-            Value::None => query,
-        }
-    }
-}
-
-/// 将 Rust 类型转换为 Value 的 trait
-pub trait IntoValue {
-    fn into_value(self) -> Value;
-}
-
-impl IntoValue for bool {
-    fn into_value(self) -> Value {
-        Value::Bool(self)
-    }
-}
-
-impl IntoValue for i16 {
-    fn into_value(self) -> Value {
-        Value::I16(self)
-    }
-}
-
-impl IntoValue for i32 {
-    fn into_value(self) -> Value {
-        Value::I32(self)
-    }
-}
-
-impl IntoValue for i64 {
-    fn into_value(self) -> Value {
-        Value::I64(self)
-    }
-}
-
-impl IntoValue for f32 {
-    fn into_value(self) -> Value {
-        Value::F32(self)
-    }
-}
-
-impl IntoValue for f64 {
-    fn into_value(self) -> Value {
-        Value::F64(self)
-    }
-}
-
-impl IntoValue for String {
-    fn into_value(self) -> Value {
-        Value::String(self)
-    }
-}
-
-impl IntoValue for &str {
-    fn into_value(self) -> Value {
-        Value::String(self.to_string())
-    }
-}
-
-impl<T: IntoValue + Clone> IntoValue for &T {
-    fn into_value(self) -> Value {
-        self.clone().into_value()
-    }
-}
-
 /// SQL 表达式
-/// 
+///
 /// 包含 SQL 片段和绑定的参数值
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -291,7 +162,7 @@ impl Expression {
     }
 
     /// 生成完整的 SQL 结果
-    /// 
+    ///
     /// 返回包含 SQL 字符串和参数值的 SqlResult
     pub fn build(self) -> SqlResult {
         let (sql, values, _) = self.build_internal(1);
@@ -299,7 +170,7 @@ impl Expression {
     }
 
     /// 从指定的参数索引开始构建 SQL
-    /// 
+    ///
     /// 返回 (sql, values, next_param_index)
     /// 用于在更大的查询中嵌入表达式
     pub fn build_with_offset(self, start_param: usize) -> (String, Vec<Value>, usize) {
@@ -307,14 +178,14 @@ impl Expression {
     }
 
     /// 内部构建方法（使用带引号的字段名）
-    /// 
+    ///
     /// 返回 (sql, values, next_param_index)
     fn build_internal(self, start_param: usize) -> (String, Vec<Value>, usize) {
         self.build_internal_with_qualifier(start_param, false)
     }
 
     /// 内部构建方法
-    /// 
+    ///
     /// `use_qualified` 为 true 时使用 table."column" 格式
     fn build_internal_with_qualifier(
         self,
@@ -385,7 +256,7 @@ impl Expression {
     }
 
     /// 生成带表名前缀的 SQL（用于 JOIN 场景）
-    /// 
+    ///
     /// 返回包含 SQL 字符串和参数值的 SqlResult
     pub fn build_qualified(self) -> SqlResult {
         let (sql, values, _) = self.build_internal_with_qualifier(1, true);
@@ -398,7 +269,7 @@ impl std::ops::BitAnd for Expression {
     type Output = Expression;
 
     /// 使用 `&` 运算符组合两个表达式（AND）
-    /// 
+    ///
     /// ```ignore
     /// let expr = id.eq(1) & name.like("John%");
     /// // 等价于 id.eq(1).and(name.like("John%"))
@@ -413,7 +284,7 @@ impl std::ops::BitOr for Expression {
     type Output = Expression;
 
     /// 使用 `|` 运算符组合两个表达式（OR）
-    /// 
+    ///
     /// ```ignore
     /// let expr = id.eq(1) | email.is_null();
     /// // 等价于 id.eq(1).or(email.is_null())

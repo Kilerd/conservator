@@ -2,11 +2,13 @@ use async_trait::async_trait;
 pub use conservator_macro::{auto, sql, Creatable, Domain};
 
 mod field;
+mod value;
 mod expression;
 mod builder;
 
 pub use field::Field;
-pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
+pub use value::{IntoValue, Value};
+pub use expression::{Expression, FieldInfo, Operator, SqlResult};
 pub use builder::{DeleteBuilder, InsertBuilder, InsertManyBuilder, JoinType, Order, SelectBuilder, UpdateBuilder};
 
 pub use sqlx::migrate;

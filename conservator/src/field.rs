@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use crate::expression::{Expression, FieldInfo, IntoValue, Operator, Value};
+use crate::expression::{Expression, FieldInfo, Operator};
+use crate::value::{IntoValue, Value};
 
 /// 表示数据库表中一个字段的元信息
 /// 
@@ -177,7 +178,7 @@ impl Field<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expression::Value;
+    use crate::Value;
 
     #[test]
     fn test_field_eq() {
