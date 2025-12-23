@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "conservator"
-version = "0.1.7"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bigdecimal 0.4.9",
@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "conservator_macro"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "darling",
