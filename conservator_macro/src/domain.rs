@@ -22,16 +22,6 @@ struct DomainFieldOpt {
     primary_key: Option<bool>,
 }
 
-fn find_by_id(table_name: &str, primary_field_name: &str) -> String {
-    format!(
-        "select * from {} where \"{}\" = $1",
-        table_name, primary_field_name
-    )
-}
-fn fetch_all(table_name: &str) -> String {
-    format!("select * from {}", table_name)
-}
-
 fn delete_by_pk(table_name: &str, primary_field_name: &str) -> String {
     format!(
         "delete from {} where \"{}\" = $1",
@@ -132,8 +122,6 @@ pub(crate) fn handler(
         .map(|(ident, _, _)| ident.to_string())
         .collect();
 
-    let find_by_id_sql = find_by_id(&crud_opts.table, &pk_field_name);
-    let fetch_all_sql = fetch_all(&crud_opts.table);
     let delete_by_pk = delete_by_pk(&crud_opts.table, &pk_field_name);
     let update_sql = update_sql(&crud_opts.table, &pk_field_name, &non_pk_field_names);
 
@@ -158,26 +146,7 @@ pub(crate) fn handler(
                 const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
     
                 type PrimaryKey = #pk_field_type;
-    
-                async fn find_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E) -> Result<Option<Self>, ::sqlx::Error> {
-                    sqlx::query_as(#find_by_id_sql)
-                    .bind(pk)
-                    .fetch_optional(executor)
-                    .await
-                }
-    
-                async fn fetch_one_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E) -> Result<Self, ::sqlx::Error> {
-                    sqlx::query_as(#find_by_id_sql)
-                    .bind(pk)
-                    .fetch_one(executor)
-                    .await
-                }
-    
-                async fn fetch_all<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(executor: E) -> Result<Vec<Self>, ::sqlx::Error> {
-                    sqlx::query_as(#fetch_all_sql)
-                    .fetch_all(executor)
-                    .await
-                }
+
                 async fn create<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
                     data: C, executor: E
                 ) -> Result<Self, ::sqlx::Error> {

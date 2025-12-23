@@ -1,53 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::{Domain, Expression, FieldInfo, SqlResult, Value};
+use crate::{Domain, Expression, FieldInfo, Order, SqlResult, Value};
 
-/// 排序方向
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Order {
-    /// 升序
-    Asc,
-    /// 降序
-    Desc,
-}
-
-impl Order {
-    fn to_sql(&self) -> &'static str {
-        match self {
-            Order::Asc => "ASC",
-            Order::Desc => "DESC",
-        }
-    }
-}
-
-/// JOIN 类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JoinType {
-    /// INNER JOIN
-    Inner,
-    /// LEFT JOIN
-    Left,
-    /// RIGHT JOIN
-    Right,
-}
-
-impl JoinType {
-    fn to_sql(&self) -> &'static str {
-        match self {
-            JoinType::Inner => "INNER JOIN",
-            JoinType::Left => "LEFT JOIN",
-            JoinType::Right => "RIGHT JOIN",
-        }
-    }
-}
-
-/// JOIN 子句
-#[derive(Debug, Clone)]
-pub struct JoinClause {
-    join_type: JoinType,
-    table: String,
-    on: Expression,
-}
+use super::JoinClause;
+use super::JoinType;
 
 /// SELECT 查询构建器
 /// 
@@ -290,7 +246,15 @@ mod tests {
     use crate::expression::{Expression, Operator, Value};
 
     // 模拟一个 Domain 实现用于测试
-    struct TestUser;
+    #[derive(sqlx::FromRow)]
+    struct TestUser {
+        #[allow(dead_code)]
+        id: i32,
+        #[allow(dead_code)]
+        name: String,
+        #[allow(dead_code)]
+        email: String,
+    }
 
     #[async_trait::async_trait]
     impl Domain for TestUser {

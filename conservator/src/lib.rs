@@ -22,23 +22,24 @@ pub struct ExistsRow {
 }
 
 #[async_trait]
-pub trait Domain: Sized {
+pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> {
     const PK_FIELD_NAME: &'static str;
     const TABLE_NAME: &'static str;
     /// 所有列名（用于 SELECT 语句）
     const COLUMN_NAMES: &'static [&'static str];
 
-    type PrimaryKey;
+    type PrimaryKey: IntoValue + Copy + Send + Sync;
 
     fn select() -> SelectBuilder<Self> {
         SelectBuilder::<Self>::new()
     }
 
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-        _pk: &Self::PrimaryKey,
-        _executor: E,
+        pk: &Self::PrimaryKey,
+        executor: E,
     ) -> Result<Option<Self>, sqlx::Error> {
-        unimplemented!()
+        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        Self::select().filter(pk_field.eq(*pk)).optional(executor).await
     }
 
     async fn fetch_one_by_pk<
@@ -46,16 +47,17 @@ pub trait Domain: Sized {
         'c: 'e,
         E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>,
     >(
-        _pk: &Self::PrimaryKey,
-        _executor: E,
+        pk: &Self::PrimaryKey,
+        executor: E,
     ) -> Result<Self, ::sqlx::Error> {
-        unimplemented!()
+        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        Self::select().filter(pk_field.eq(*pk)).one(executor).await
     }
 
     async fn fetch_all<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        _executor: E,
+        executor: E,
     ) -> Result<Vec<Self>, ::sqlx::Error> {
-        unimplemented!()
+        Self::select().all(executor).await
     }
 
     async fn create<

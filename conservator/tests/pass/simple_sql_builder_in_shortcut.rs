@@ -1,4 +1,4 @@
-use conservator::{Domain, FromRow, SelectBuilder};
+use conservator::{Domain, FromRow};
 
 #[derive(Debug, Domain, FromRow)]
 #[domain(table = "users")]
