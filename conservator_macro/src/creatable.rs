@@ -48,6 +48,9 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
         let bind_list_for_query = fields.iter().map(|it| {
             quote! { .bind(self. #it)}
         });
+        let bind_list_for_query_scalar = fields.iter().map(|it| {
+            quote! { .bind(self. #it)}
+        });
 
         quote! {
             impl ::conservator::Creatable for #ident {
@@ -84,6 +87,13 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
                 ) -> ::sqlx::query::Query<'q, ::sqlx::Postgres, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments> {
                     e
                     #(#bind_list_for_query)*
+                }
+                fn bind_to_query_scalar<'q, O>(
+                    self,
+                    e: ::sqlx::query::QueryScalar<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments>,
+                ) -> ::sqlx::query::QueryScalar<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments> {
+                    e
+                    #(#bind_list_for_query_scalar)*
                 }
             }
         }

@@ -136,7 +136,7 @@ impl<T: IntoValue> Field<T> {
 }
 
 // 为 Field<Option<T>> 提供 IS NULL / IS NOT NULL 方法
-impl<T> Field<Option<T>> {
+impl<T: IntoValue> Field<Option<T>> {
     /// 创建 field IS NULL 表达式
     /// 
     /// ```ignore

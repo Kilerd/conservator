@@ -7,7 +7,7 @@ mod builder;
 
 pub use field::Field;
 pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
-pub use builder::{DeleteBuilder, JoinType, Order, SelectBuilder, UpdateBuilder};
+pub use builder::{DeleteBuilder, InsertBuilder, InsertManyBuilder, JoinType, Order, SelectBuilder, UpdateBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
@@ -42,6 +42,13 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
         UpdateBuilder::<Self>::new()
     }
 
+    fn insert<C: Creatable>(data: C) -> InsertBuilder<Self, C> {
+        InsertBuilder::new(data)
+    }
+    fn insert_many<C: Creatable>(data: Vec<C>) -> InsertManyBuilder<Self, C> {
+        InsertManyBuilder::new(data)
+    }
+
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
         pk: &Self::PrimaryKey,
         executor: E,
@@ -68,25 +75,6 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
         Self::select().all(executor).await
     }
 
-    async fn create<
-        'e,
-        'c: 'e,
-        E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>,
-        C: Creatable,
-    >(
-        _data: C,
-        _executor: E,
-    ) -> Result<Self, ::sqlx::Error> {
-        unimplemented!()
-    }
-
-    async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: Creatable>(
-        _data: Vec<C>,
-        _executor: E,
-    ) -> Result<(), ::sqlx::Error> {
-        unimplemented!()
-    }
-
     async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         pk: &Self::PrimaryKey,
         executor: E,
@@ -103,7 +91,7 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
     }
 }
 
-pub trait Creatable: Send {
+pub trait Creatable: Send + Sized {
     fn get_columns(&self) -> &str;
     fn get_insert_sql(&self) -> &str;
     fn get_batch_insert_sql(&self, idx: usize) -> String;
@@ -133,6 +121,25 @@ pub trait Creatable: Send {
         ::sqlx::Postgres,
         <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
     >;
+    fn bind_to_query_scalar<'q, O>(
+        self,
+        e: ::sqlx::query::QueryScalar<
+            'q,
+            ::sqlx::Postgres,
+            O,
+            <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
+        >,
+    ) -> ::sqlx::query::QueryScalar<
+        'q,
+        ::sqlx::Postgres,
+        O,
+        <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,
+    >;
+
+    /// 创建 InsertBuilder 用于插入数据
+    fn insert<T: Domain>(self) -> InsertBuilder<T, Self> {
+        InsertBuilder::new(self)
+    }
 }
 
 #[cfg(test)]

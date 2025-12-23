@@ -140,38 +140,6 @@ pub(crate) fn handler(
     
                 type PrimaryKey = #pk_field_type;
 
-                async fn create<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
-                    data: C, executor: E
-                ) -> Result<Self, ::sqlx::Error> {
-                    let sql = format!("INSERT INTO {} {} VALUES {} returning *", #table_name, data.get_columns(), data.get_insert_sql());
-                    let mut ex = sqlx::query_as(&sql);
-                    data.build_for_query_as(ex)
-                        .fetch_one(executor)
-                        .await
-                }
-                async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
-                    data: Vec<C>,
-                    executor: E,
-                ) -> Result<(), ::sqlx::Error> {
-                    if data.is_empty() {
-                        return Ok(());
-                    }
-                    let columns = data[0].get_columns();
-                    let mut insert_sql = String::new();
-                    for (i, item) in data.iter().enumerate() {
-                        if i > 0 {
-                            insert_sql.push_str(",");
-                        }
-                        insert_sql.push_str(item.get_batch_insert_sql(i).as_str());
-                    }
-                    let sql = format!("INSERT INTO {} {} VALUES {}", #table_name, columns, insert_sql);
-                    let mut ex = sqlx::query(&sql);
-                    for item in data {
-                        ex = item.build_for_query(ex);
-                    }
-                    ex.execute(executor).await?;
-                    Ok(())
-                }
                 async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(entity:Self, executor: E) ->Result<(), ::sqlx::Error> {
                     sqlx::query(#update_sql)
                         #(.bind(entity. #non_pk_field_names))*
