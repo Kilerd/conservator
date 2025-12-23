@@ -22,12 +22,6 @@ struct DomainFieldOpt {
     primary_key: Option<bool>,
 }
 
-fn delete_by_pk(table_name: &str, primary_field_name: &str) -> String {
-    format!(
-        "delete from {} where \"{}\" = $1",
-        table_name, primary_field_name
-    )
-}
 fn update_sql(table_name: &str, primary_field_name: &str, non_pk_fields: &[syn::Ident]) -> String {
     let set_part = non_pk_fields
         .iter()
@@ -122,7 +116,6 @@ pub(crate) fn handler(
         .map(|(ident, _, _)| ident.to_string())
         .collect();
 
-    let delete_by_pk = delete_by_pk(&crud_opts.table, &pk_field_name);
     let update_sql = update_sql(&crud_opts.table, &pk_field_name, &non_pk_field_names);
 
     let ret = quote! {
@@ -177,13 +170,6 @@ pub(crate) fn handler(
                         ex = item.build_for_query(ex);
                     }
                     ex.execute(executor).await?;
-                    Ok(())
-                }
-                async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E,) ->Result<(), ::sqlx::Error> {
-                    sqlx::query(#delete_by_pk)
-                    .bind(pk)
-                    .execute(executor)
-                    .await?;
                     Ok(())
                 }
                 async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(entity:Self, executor: E) ->Result<(), ::sqlx::Error> {

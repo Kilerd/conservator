@@ -1,0 +1,8 @@
+error[E0599]: no method named `build` found for struct `DeleteBuilder<User>` in the current scope
+  --> tests/fail/delete_without_filter.rs:16:34
+   |
+16 |     let _result = User::delete().build();
+   |                                  ^^^^^ method not found in `DeleteBuilder<User>`
+   |
+   = note: the method was found for
+           - `DeleteBuilder<T, true>`

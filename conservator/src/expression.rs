@@ -94,7 +94,7 @@ pub enum Value {
 }
 
 impl Value {
-    /// 将 Value 绑定到 sqlx 查询
+    /// 将 Value 绑定到 sqlx QueryAs 查询
     pub fn bind_to<'q, O>(
         self,
         query: sqlx::query::QueryAs<
@@ -112,6 +112,32 @@ impl Value {
     where
         O: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {
+        match self {
+            Value::Bool(v) => query.bind(v),
+            Value::I16(v) => query.bind(v),
+            Value::I32(v) => query.bind(v),
+            Value::I64(v) => query.bind(v),
+            Value::F32(v) => query.bind(v),
+            Value::F64(v) => query.bind(v),
+            Value::String(v) => query.bind(v),
+            Value::Bytes(v) => query.bind(v),
+            Value::None => query,
+        }
+    }
+
+    /// 将 Value 绑定到 sqlx Query 查询（用于 DELETE/UPDATE 等不返回行的操作）
+    pub fn bind_to_query<'q>(
+        self,
+        query: sqlx::query::Query<
+            'q,
+            sqlx::Postgres,
+            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
+        >,
+    ) -> sqlx::query::Query<
+        'q,
+        sqlx::Postgres,
+        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
+    > {
         match self {
             Value::Bool(v) => query.bind(v),
             Value::I16(v) => query.bind(v),

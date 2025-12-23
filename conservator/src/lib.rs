@@ -7,7 +7,7 @@ mod builder;
 
 pub use field::Field;
 pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
-pub use builder::{JoinType, Order, SelectBuilder};
+pub use builder::{DeleteBuilder, JoinType, Order, SelectBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
@@ -32,6 +32,10 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
 
     fn select() -> SelectBuilder<Self> {
         SelectBuilder::<Self>::new()
+    }
+
+    fn delete() -> DeleteBuilder<Self> {
+        DeleteBuilder::<Self>::new()
     }
 
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
@@ -80,10 +84,11 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
     }
 
     async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-        _pk: &Self::PrimaryKey,
-        _executor: E,
-    ) -> Result<(), ::sqlx::Error> {
-        unimplemented!()
+        pk: &Self::PrimaryKey,
+        executor: E,
+    ) -> Result<u64, ::sqlx::Error> {
+        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        DeleteBuilder::<Self>::new().filter(pk_field.eq(*pk)).execute(executor).await
     }
 
     async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
