@@ -6,12 +6,18 @@ pub struct DeleteBuilder<T: Domain, const FILTER_SET: bool = false> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Domain, const FILTER_SET: bool> DeleteBuilder<T, FILTER_SET> {
-    pub fn new() -> Self {
+impl<T: Domain, const FILTER_SET: bool> Default for DeleteBuilder<T, FILTER_SET> {
+    fn default() -> Self {
         Self {
             filter_expr: None,
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Domain, const FILTER_SET: bool> DeleteBuilder<T, FILTER_SET> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn filter(self, expr: Expression) -> DeleteBuilder<T, true> {
@@ -27,7 +33,6 @@ impl<T: Domain, const FILTER_SET: bool> DeleteBuilder<T, FILTER_SET> {
 }
 
 impl<T: Domain> DeleteBuilder<T, true> {
-    
     pub fn build(self) -> SqlResult {
         let mut sql = String::new();
         sql.push_str("DELETE FROM ");

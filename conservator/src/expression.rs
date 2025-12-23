@@ -65,7 +65,7 @@ pub enum Operator {
 
 impl Operator {
     /// 返回操作符的 SQL 表示
-    pub fn to_sql(&self) -> &'static str {
+    pub fn to_sql(self) -> &'static str {
         match self {
             Operator::Eq => "=",
             Operator::Ne => "!=",

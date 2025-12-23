@@ -25,13 +25,19 @@ pub struct UpdateBuilder<
     _phantom: PhantomData<T>,
 }
 
-impl<T: Domain> UpdateBuilder<T, false, false> {
-    pub fn new() -> Self {
+impl<T: Domain> Default for UpdateBuilder<T, false, false> {
+    fn default() -> Self {
         Self {
             updates: Vec::new(),
             filter_expr: None,
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Domain> UpdateBuilder<T, false, false> {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

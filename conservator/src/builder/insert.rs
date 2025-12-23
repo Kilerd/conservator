@@ -19,7 +19,6 @@ use std::marker::PhantomData;
 ///     .returning_entity(db)
 ///     .await?;
 /// ```
-
 /// 构建返回列名的 SQL 片段
 fn returning_columns<T: Domain>() -> String {
     T::COLUMN_NAMES
@@ -50,7 +49,8 @@ impl<T: Domain, C: Creatable> InsertBuilder<T, C> {
         executor: E,
     ) -> Result<T::PrimaryKey, sqlx::Error>
     where
-        T::PrimaryKey: for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Unpin,
+        T::PrimaryKey:
+            for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Unpin,
     {
         let sql = format!(
             "INSERT INTO {} {} VALUES {} RETURNING \"{}\"",
@@ -68,7 +68,11 @@ impl<T: Domain, C: Creatable> InsertBuilder<T, C> {
     /// 执行 INSERT 并返回完整实体
     ///
     /// 生成: `INSERT INTO table (cols) VALUES (vals) RETURNING "col1", "col2", ...`
-    pub async fn returning_entity<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+    pub async fn returning_entity<
+        'e,
+        'c: 'e,
+        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+    >(
         self,
         executor: E,
     ) -> Result<T, sqlx::Error> {
@@ -117,7 +121,8 @@ impl<T: Domain, C: Creatable> InsertManyBuilder<T, C> {
         executor: E,
     ) -> Result<Vec<T::PrimaryKey>, sqlx::Error>
     where
-        T::PrimaryKey: for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Unpin,
+        T::PrimaryKey:
+            for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Unpin,
     {
         if self.data.is_empty() {
             return Ok(Vec::new());
@@ -144,7 +149,11 @@ impl<T: Domain, C: Creatable> InsertManyBuilder<T, C> {
     /// 执行 INSERT 并返回完整实体列表
     ///
     /// 生成: `INSERT INTO table (cols) VALUES (v1), (v2), ... RETURNING "col1", "col2", ...`
-    pub async fn returning_entity<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+    pub async fn returning_entity<
+        'e,
+        'c: 'e,
+        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+    >(
         self,
         executor: E,
     ) -> Result<Vec<T>, sqlx::Error> {

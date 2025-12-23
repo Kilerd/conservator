@@ -19,10 +19,10 @@ pub fn derive_domain_fn(input: TokenStream) -> TokenStream {
 }
 
 /// 派生 Selectable trait
-/// 
+///
 /// 自动生成 `Selectable` 和 `sqlx::FromRow` 的实现。
 /// 用于定义可以作为 `SelectBuilder.returning::<T>()` 目标的投影类型。
-/// 
+///
 /// # Example
 /// ```ignore
 /// #[derive(Selectable)]
@@ -45,15 +45,13 @@ pub fn derive_selectable_fn(input: TokenStream) -> TokenStream {
 #[proc_macro_error]
 pub fn derive_creatable_fn(input: TokenStream) -> TokenStream {
     let stream2 = proc_macro2::TokenStream::from(input);
-    let stream1 = proc_macro::TokenStream::from(creatable::handle_creatable(stream2));
-    stream1
+    proc_macro::TokenStream::from(creatable::handle_creatable(stream2))
 }
 
 #[proc_macro_attribute]
 pub fn auto(_args: TokenStream, input: TokenStream) -> TokenStream {
     let stream2 = proc_macro2::TokenStream::from(input);
-    let stream1 = proc_macro::TokenStream::from(auto::handler(stream2));
-    stream1
+    proc_macro::TokenStream::from(auto::handler(stream2))
 }
 
 #[proc_macro_attribute]

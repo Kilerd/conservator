@@ -1,15 +1,18 @@
 use async_trait::async_trait;
 pub use conservator_macro::{auto, sql, Creatable, Domain, Selectable};
 
+mod builder;
+mod expression;
 mod field;
 mod value;
-mod expression;
-mod builder;
 
+pub use builder::{
+    DeleteBuilder, InsertBuilder, InsertManyBuilder, IntoOrderedField, JoinType, Order,
+    OrderedField, SelectBuilder, UpdateBuilder,
+};
+pub use expression::{Expression, FieldInfo, Operator, SqlResult};
 pub use field::Field;
 pub use value::{IntoValue, Value};
-pub use expression::{Expression, FieldInfo, Operator, SqlResult};
-pub use builder::{DeleteBuilder, InsertBuilder, InsertManyBuilder, IntoOrderedField, JoinType, Order, OrderedField, SelectBuilder, UpdateBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
@@ -24,10 +27,12 @@ pub struct ExistsRow {
 }
 
 /// 轻量级 trait，用于 SELECT 返回类型
-/// 
+///
 /// 实现此 trait 的类型可以作为 `SelectBuilder.returning::<T>()` 的目标类型。
 /// `#[derive(Selectable)]` 会自动生成此 trait 和 `sqlx::FromRow` 的实现。
-pub trait Selectable: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> {
+pub trait Selectable:
+    Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>
+{
     /// 所有列名（用于 SELECT 语句）
     const COLUMN_NAMES: &'static [&'static str];
 }
@@ -62,8 +67,12 @@ pub trait Domain: Selectable {
         pk: &Self::PrimaryKey,
         executor: E,
     ) -> Result<Option<Self>, sqlx::Error> {
-        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
-        Self::select().filter(pk_field.eq(*pk)).optional(executor).await
+        let pk_field: Field<Self::PrimaryKey> =
+            Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        Self::select()
+            .filter(pk_field.eq(*pk))
+            .optional(executor)
+            .await
     }
 
     async fn fetch_one_by_pk<
@@ -74,7 +83,8 @@ pub trait Domain: Selectable {
         pk: &Self::PrimaryKey,
         executor: E,
     ) -> Result<Self, ::sqlx::Error> {
-        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        let pk_field: Field<Self::PrimaryKey> =
+            Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
         Self::select().filter(pk_field.eq(*pk)).one(executor).await
     }
 
@@ -88,12 +98,16 @@ pub trait Domain: Selectable {
         pk: &Self::PrimaryKey,
         executor: E,
     ) -> Result<u64, ::sqlx::Error> {
-        let pk_field: Field<Self::PrimaryKey> = Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
-        DeleteBuilder::<Self>::new().filter(pk_field.eq(*pk)).execute(executor).await
+        let pk_field: Field<Self::PrimaryKey> =
+            Field::new(Self::PK_FIELD_NAME, Self::TABLE_NAME, true);
+        DeleteBuilder::<Self>::new()
+            .filter(pk_field.eq(*pk))
+            .execute(executor)
+            .await
     }
 
     /// 更新实体到数据库
-    /// 
+    ///
     /// 此方法由 `#[derive(Domain)]` 宏生成具体实现
     async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         &self,
@@ -166,5 +180,3 @@ mod test {
         t.pass("tests/pass/*.rs");
     }
 }
-
-

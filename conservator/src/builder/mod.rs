@@ -1,12 +1,12 @@
-mod select;
-mod update;
 mod delete;
 mod insert;
+mod select;
+mod update;
 
-pub use select::SelectBuilder;
-pub use update::UpdateBuilder;
 pub use delete::DeleteBuilder;
 pub use insert::{InsertBuilder, InsertManyBuilder};
+pub use select::SelectBuilder;
+pub use update::UpdateBuilder;
 
 use crate::expression::FieldInfo;
 use crate::Expression;
@@ -21,7 +21,7 @@ pub enum Order {
 }
 
 impl Order {
-    pub(crate) fn to_sql(&self) -> &'static str {
+    pub(crate) fn to_sql(self) -> &'static str {
         match self {
             Order::Asc => "ASC",
             Order::Desc => "DESC",
@@ -44,7 +44,7 @@ impl OrderedField {
 }
 
 /// 可转换为 OrderedField 的 trait
-/// 
+///
 /// 实现者:
 /// - `OrderedField` - 直接使用
 /// - `Field<T>` - 默认升序
@@ -84,7 +84,7 @@ pub enum JoinType {
 }
 
 impl JoinType {
-    fn to_sql(&self) -> &'static str {
+    fn to_sql(self) -> &'static str {
         match self {
             JoinType::Inner => "INNER JOIN",
             JoinType::Left => "LEFT JOIN",

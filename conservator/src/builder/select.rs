@@ -5,9 +5,9 @@ use crate::{Domain, Expression, FieldInfo, Selectable, SqlResult, Value};
 use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
 
 /// SELECT 查询构建器
-/// 
+///
 /// 用于构建类型安全的 SELECT 查询
-/// 
+///
 /// # Example
 /// ```ignore
 /// let result = SelectBuilder::<User>::new()
@@ -52,7 +52,6 @@ impl<T: Domain> SelectBuilder<T, T> {
 }
 
 impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
-
     pub fn returning<R: Selectable>(self) -> SelectBuilder<T, R> {
         SelectBuilder::<T, R> {
             filter_expr: self.filter_expr,
@@ -67,7 +66,7 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     }
 
     /// 添加 WHERE 条件
-    /// 
+    ///
     /// 多次调用会用 AND 组合条件
     pub fn filter(mut self, expr: Expression) -> Self {
         self.filter_expr = match self.filter_expr {
@@ -78,12 +77,12 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     }
 
     /// 添加 ORDER BY 子句
-    /// 
+    ///
     /// 支持三种用法:
     /// - `.order_by(field)` - 默认升序
     /// - `.order_by(field.asc())` - 显式升序
     /// - `.order_by(field.desc())` - 显式降序
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// User::select()
@@ -148,7 +147,7 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     }
 
     /// 构建完整的 SQL 查询
-    /// 
+    ///
     /// 返回包含 SQL 字符串和参数值的 SqlResult
     pub fn build(self) -> SqlResult {
         let mut sql_parts = Vec::new();
@@ -166,7 +165,12 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
         // JOIN 子句
         for join in self.joins {
             let (on_sql, on_values, next_idx) = join.on.build_with_offset(param_idx);
-            sql_parts.push(format!("{} {} ON {}", join.join_type.to_sql(), join.table, on_sql));
+            sql_parts.push(format!(
+                "{} {} ON {}",
+                join.join_type.to_sql(),
+                join.table,
+                on_sql
+            ));
             all_values.extend(on_values);
             param_idx = next_idx;
         }
@@ -376,8 +380,8 @@ mod tests {
 
     #[test]
     fn test_complex_select() {
-        use crate::builder::{OrderedField, Order};
-        
+        use crate::builder::{Order, OrderedField};
+
         let expr = Expression::comparison(id_field(), Operator::Gt, Value::I32(10));
         let result = SelectBuilder::<TestUser>::new()
             .filter(expr)

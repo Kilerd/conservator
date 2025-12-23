@@ -26,7 +26,7 @@ fn update_sql(table_name: &str, primary_field_name: &str, non_pk_fields: &[syn::
     let set_part = non_pk_fields
         .iter()
         .enumerate()
-        .map(|(idx, field)| format!("\"{}\" = ${}", field.to_string(), idx + 1))
+        .map(|(idx, field)| format!("\"{}\" = ${}", field, idx + 1))
         .join(", ");
     format!(
         "UPDATE {} SET {} WHERE \"{}\" = ${}",
@@ -44,7 +44,7 @@ pub(crate) fn handler(
     let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1).unwrap();
 
     let fields = crud_opts.data.take_struct().unwrap();
-    
+
     // 收集所有字段信息用于生成 Columns 结构体
     let all_fields: Vec<_> = fields
         .fields
@@ -56,7 +56,7 @@ pub(crate) fn handler(
             })
         })
         .collect();
-    
+
     let non_pk_field_names = fields
         .fields
         .iter()
@@ -88,20 +88,17 @@ pub(crate) fn handler(
 
     let table_name = &crud_opts.table;
     let ident = crud_opts.ident.clone();
-    
+
     // 生成 Columns 结构体名称
-    let columns_struct_ident = syn::Ident::new(
-        &format!("{}Columns", ident),
-        ident.span(),
-    );
-    
+    let columns_struct_ident = syn::Ident::new(&format!("{}Columns", ident), ident.span());
+
     // 生成 Columns 结构体的字段定义
     let columns_fields = all_fields.iter().map(|(field_ident, field_ty, _)| {
         quote! {
             pub #field_ident: ::conservator::Field<#field_ty>
         }
     });
-    
+
     // 生成 COLUMNS 常量的字段初始化
     let columns_init = all_fields.iter().map(|(field_ident, _, is_pk)| {
         let field_name = field_ident.to_string();
@@ -109,7 +106,7 @@ pub(crate) fn handler(
             #field_ident: ::conservator::Field::new(#field_name, #table_name, #is_pk)
         }
     });
-    
+
     // 生成列名数组
     let column_names: Vec<String> = all_fields
         .iter()
@@ -119,60 +116,66 @@ pub(crate) fn handler(
     let update_sql = update_sql(&crud_opts.table, &pk_field_name, &non_pk_field_names);
 
     // 生成 FromRow 的字段名
-    let field_idents: Vec<_> = all_fields.iter().map(|(ident, _, _)| ident.clone()).collect();
-    let field_names_str: Vec<String> = all_fields.iter().map(|(ident, _, _)| ident.to_string()).collect();
+    let field_idents: Vec<_> = all_fields
+        .iter()
+        .map(|(ident, _, _)| ident.clone())
+        .collect();
+    let field_names_str: Vec<String> = all_fields
+        .iter()
+        .map(|(ident, _, _)| ident.to_string())
+        .collect();
 
     let ret = quote! {
-        /// 包含 #ident 所有字段元信息的结构体
-        #[derive(Debug, Clone, Copy)]
-        pub struct #columns_struct_ident {
-            #(#columns_fields),*
-        }
-        
-        impl #ident {
-            /// 所有字段的元信息
-            pub const COLUMNS: #columns_struct_ident = #columns_struct_ident {
-                #(#columns_init),*
-            };
-        }
+    /// 包含 #ident 所有字段元信息的结构体
+    #[derive(Debug, Clone, Copy)]
+    pub struct #columns_struct_ident {
+        #(#columns_fields),*
+    }
 
-        // 实现 Selectable trait
-        impl ::conservator::Selectable for #ident {
-            const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
-        }
-
-        // 实现 FromRow trait
-        impl<'r> ::sqlx::FromRow<'r, ::sqlx::postgres::PgRow> for #ident {
-            fn from_row(row: &'r ::sqlx::postgres::PgRow) -> Result<Self, ::sqlx::Error> {
-                use ::sqlx::Row;
-                Ok(Self {
-                    #(#field_idents: row.try_get(#field_names_str)?),*
-                })
-            }
-        }
-    
-        #[::async_trait::async_trait]
-        impl ::conservator::Domain for #ident {
-            const PK_FIELD_NAME: &'static str = #pk_field_name;
-            const TABLE_NAME: &'static str = #table_name;
-
-            type PrimaryKey = #pk_field_type;
-
-            async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-                &self,
-                executor: E,
-            ) -> Result<(), ::sqlx::Error> {
-                ::sqlx::query(#update_sql)
-                    #(.bind(&self.#non_pk_field_names))*
-                    .bind(&self.#pk_field_ident)
-                    .execute(executor)
-                    .await?;
-                Ok(())
-            }
-        }
-    
+    impl #ident {
+        /// 所有字段的元信息
+        pub const COLUMNS: #columns_struct_ident = #columns_struct_ident {
+            #(#columns_init),*
         };
-        Ok(ret)
+    }
+
+    // 实现 Selectable trait
+    impl ::conservator::Selectable for #ident {
+        const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
+    }
+
+    // 实现 FromRow trait
+    impl<'r> ::sqlx::FromRow<'r, ::sqlx::postgres::PgRow> for #ident {
+        fn from_row(row: &'r ::sqlx::postgres::PgRow) -> Result<Self, ::sqlx::Error> {
+            use ::sqlx::Row;
+            Ok(Self {
+                #(#field_idents: row.try_get(#field_names_str)?),*
+            })
+        }
+    }
+
+    #[::async_trait::async_trait]
+    impl ::conservator::Domain for #ident {
+        const PK_FIELD_NAME: &'static str = #pk_field_name;
+        const TABLE_NAME: &'static str = #table_name;
+
+        type PrimaryKey = #pk_field_type;
+
+        async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+            &self,
+            executor: E,
+        ) -> Result<(), ::sqlx::Error> {
+            ::sqlx::query(#update_sql)
+                #(.bind(&self.#non_pk_field_names))*
+                .bind(&self.#pk_field_ident)
+                .execute(executor)
+                .await?;
+            Ok(())
+        }
+    }
+
+    };
+    Ok(ret)
 }
 
 #[cfg(test)]

@@ -145,9 +145,7 @@ impl Action {
     ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), (Span, &'static str)> {
         let span = ident.span();
         match ident {
-            ReturnType::Default => {
-                return Err((span, "default return type does not support"));
-            }
+            ReturnType::Default => Err((span, "default return type does not support")),
             ReturnType::Type(_, inner) => match self {
                 Action::Fetch => Ok((quote! {#inner}, quote! { #inner })),
                 Action::Exists => Ok((quote! {::conservator::ExistsRow}, quote! { bool })),
@@ -179,7 +177,7 @@ pub(crate) fn handler(
         Err(_) => return Err((args.span(), "unknown action type")),
     };
 
-    let input_span = input.span().clone();
+    let input_span = input.span();
     let method = match parse2::<ItemFn>(input) {
         Ok(func) => func,
         Err(_) => return Err((input_span, "unknown action type")),
@@ -191,7 +189,7 @@ pub(crate) fn handler(
 
     let output = &method.sig.output;
 
-    let (fetch_model, return_type) = action.extract_and_build_ret_type(&output)?;
+    let (fetch_model, return_type) = action.extract_and_build_ret_type(output)?;
     let body = &method.block;
     let body: Vec<proc_macro2::TokenStream> = body
         .stmts
@@ -225,12 +223,10 @@ pub(crate) fn handler(
 
     let inputs = if inputs.is_empty() {
         quote! {}
+    } else if inputs.trailing_punct() {
+        quote! { #inputs}
     } else {
-        if inputs.trailing_punct() {
-            quote! { #inputs}
-        } else {
-            quote! { #inputs,}
-        }
+        quote! { #inputs,}
     };
     let ret = quote! {
         #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs executor: E) -> Result<#return_type, ::sqlx::Error> {

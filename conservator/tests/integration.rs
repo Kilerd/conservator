@@ -568,7 +568,12 @@ async fn test_and_combination() {
     insert_test_users(&pool).await;
 
     let users = User::select()
-        .filter(User::COLUMNS.is_active.eq(true).and(User::COLUMNS.age.gt(25)))
+        .filter(
+            User::COLUMNS
+                .is_active
+                .eq(true)
+                .and(User::COLUMNS.age.gt(25)),
+        )
         .all(&pool)
         .await
         .unwrap();
@@ -725,11 +730,41 @@ async fn test_order_by_three_fields() {
 
     // 插入更多测试数据以便多重排序
     let users_data = vec![
-        CreateUser { name: "Alice".into(), email: "a1@test.com".into(), age: 25, score: 80.0, is_active: true },
-        CreateUser { name: "Alice".into(), email: "a2@test.com".into(), age: 30, score: 90.0, is_active: true },
-        CreateUser { name: "Bob".into(), email: "b1@test.com".into(), age: 25, score: 85.0, is_active: true },
-        CreateUser { name: "Bob".into(), email: "b2@test.com".into(), age: 25, score: 75.0, is_active: false },
-        CreateUser { name: "Charlie".into(), email: "c1@test.com".into(), age: 30, score: 70.0, is_active: true },
+        CreateUser {
+            name: "Alice".into(),
+            email: "a1@test.com".into(),
+            age: 25,
+            score: 80.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Alice".into(),
+            email: "a2@test.com".into(),
+            age: 30,
+            score: 90.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Bob".into(),
+            email: "b1@test.com".into(),
+            age: 25,
+            score: 85.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "Bob".into(),
+            email: "b2@test.com".into(),
+            age: 25,
+            score: 75.0,
+            is_active: false,
+        },
+        CreateUser {
+            name: "Charlie".into(),
+            email: "c1@test.com".into(),
+            age: 30,
+            score: 70.0,
+            is_active: true,
+        },
     ];
 
     for user in users_data {
@@ -787,9 +822,27 @@ async fn test_order_by_with_same_values() {
 
     // 插入具有相同值的数据
     let users_data = vec![
-        CreateUser { name: "User A".into(), email: "a@test.com".into(), age: 25, score: 80.0, is_active: true },
-        CreateUser { name: "User B".into(), email: "b@test.com".into(), age: 25, score: 80.0, is_active: true },
-        CreateUser { name: "User C".into(), email: "c@test.com".into(), age: 25, score: 80.0, is_active: true },
+        CreateUser {
+            name: "User A".into(),
+            email: "a@test.com".into(),
+            age: 25,
+            score: 80.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "User B".into(),
+            email: "b@test.com".into(),
+            age: 25,
+            score: 80.0,
+            is_active: true,
+        },
+        CreateUser {
+            name: "User C".into(),
+            email: "c@test.com".into(),
+            age: 25,
+            score: 80.0,
+            is_active: true,
+        },
     ];
 
     for user in users_data {
@@ -1509,8 +1562,8 @@ async fn test_bulk_insert_and_query() {
         users.push(CreateUser {
             name: format!("user_{}", i),
             email: format!("user_{}@test.com", i),
-            age: 20 + (i % 50) as i32,
-            score: 50.0 + (i as f64),
+            age: 20 + (i % 50),
+            score: 50.0 + i as f64,
             is_active: i % 2 == 0,
         });
     }
@@ -1529,7 +1582,9 @@ async fn test_bulk_insert_and_query() {
         .unwrap();
 
     assert!(result.len() <= 10);
-    assert!(result.iter().all(|u| u.is_active && u.age >= 30 && u.age <= 40));
+    assert!(result
+        .iter()
+        .all(|u| u.is_active && u.age >= 30 && u.age <= 40));
 }
 
 // ==========================================

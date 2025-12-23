@@ -5,7 +5,7 @@ use crate::expression::{Expression, FieldInfo, Operator};
 use crate::value::{IntoValue, Value};
 
 /// 表示数据库表中一个字段的元信息
-/// 
+///
 /// `T` 是字段的 Rust 类型，用于类型安全的查询构建
 #[derive(Debug)]
 pub struct Field<T> {
@@ -55,7 +55,7 @@ impl<T> Field<T> {
     }
 
     /// 创建升序排序
-    /// 
+    ///
     /// ```ignore
     /// User::select()
     ///     .order_by(User::COLUMNS.name.asc())
@@ -66,7 +66,7 @@ impl<T> Field<T> {
     }
 
     /// 创建降序排序
-    /// 
+    ///
     /// ```ignore
     /// User::select()
     ///     .order_by(User::COLUMNS.created_at.desc())
@@ -106,7 +106,7 @@ impl<T> From<&Field<T>> for FieldInfo {
 // 为实现了 IntoValue 的类型提供表达式构建方法
 impl<T: IntoValue> Field<T> {
     /// 创建 field = value 表达式
-    /// 
+    ///
     /// ```ignore
     /// let expr = User::COLUMNS.id.eq(1);
     /// let result = expr.build();
@@ -143,7 +143,7 @@ impl<T: IntoValue> Field<T> {
     }
 
     /// 创建 field BETWEEN low AND high 表达式
-    /// 
+    ///
     /// ```ignore
     /// let expr = User::COLUMNS.age.between(18, 65);
     /// let result = expr.build();
@@ -159,7 +159,7 @@ impl<T: IntoValue> Field<T> {
     }
 
     /// 创建 field IN (values) 表达式
-    /// 
+    ///
     /// ```ignore
     /// let expr = User::COLUMNS.status.in_list(vec![1, 2, 3]);
     /// let result = expr.build();
@@ -175,7 +175,7 @@ impl<T: IntoValue> Field<T> {
 // 为 Field<Option<T>> 提供 IS NULL / IS NOT NULL 方法
 impl<T: IntoValue> Field<Option<T>> {
     /// 创建 field IS NULL 表达式
-    /// 
+    ///
     /// ```ignore
     /// let expr = User::COLUMNS.email.is_null();
     /// let result = expr.build();
@@ -195,7 +195,7 @@ impl<T: IntoValue> Field<Option<T>> {
 // 为 Field<String> 提供 LIKE 方法
 impl Field<String> {
     /// 创建 field LIKE pattern 表达式
-    /// 
+    ///
     /// ```ignore
     /// let expr = User::COLUMNS.name.like("John%");
     /// let result = expr.build();
@@ -291,9 +291,12 @@ mod tests {
 
         let expr = id.eq(1).and(name.like("John%")).or(email.is_null());
         let result = expr.build();
-        assert_eq!(result.sql, "((\"id\" = $1 AND \"name\" LIKE $2) OR \"email\" IS NULL)");
+        assert_eq!(
+            result.sql,
+            "((\"id\" = $1 AND \"name\" LIKE $2) OR \"email\" IS NULL)"
+        );
         assert_eq!(result.values.len(), 2);
-        
+
         // 验证值的顺序和内容
         match (&result.values[0], &result.values[1]) {
             (Value::I32(id_val), Value::String(name_val)) => {

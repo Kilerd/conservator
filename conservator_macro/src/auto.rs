@@ -142,7 +142,7 @@ pub(crate) fn handler(input: proc_macro2::TokenStream) -> proc_macro2::TokenStre
 }
 
 pub(crate) fn handler_magic_function(
-    header: &Box<Type>,
+    header: &Type,
     method: &ImplItemMethod,
 ) -> proc_macro2::TokenStream {
     let vis = &method.vis;
@@ -161,7 +161,6 @@ pub(crate) fn handler_magic_function(
             .expect("invalid regex");
     let field_factors = field_naming_convention
         .captures_iter(&ident_name)
-        .into_iter()
         .enumerate()
         .map(|(idx, cap)| {
             let field_name = cap.name("field").map_or("", |m| m.as_str());

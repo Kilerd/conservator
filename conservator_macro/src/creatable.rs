@@ -36,10 +36,10 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
             .map(|it| it.0)
             .map(|it| format!("${}", it + 1))
             .join(",");
-        
+
         let columns = format!("({})", field_list);
         let insert_sql = format!("({})", param_list);
-        
+
         let fields_len = fields.len();
 
         let bind_list_for_query_as = fields.iter().map(|it| {

@@ -5,9 +5,8 @@ use syn::{parse2, DeriveInput, Fields};
 pub(crate) fn handler(
     input: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
-    let derive_input = parse2::<DeriveInput>(input).map_err(|_| {
-        (Span::call_site(), "Failed to parse input")
-    })?;
+    let derive_input =
+        parse2::<DeriveInput>(input).map_err(|_| (Span::call_site(), "Failed to parse input"))?;
 
     let ident = &derive_input.ident;
 
@@ -24,9 +23,10 @@ pub(crate) fn handler(
     let field_info: Vec<_> = fields
         .iter()
         .filter_map(|field| {
-            field.ident.as_ref().map(|ident| {
-                (ident.clone(), field.ty.clone())
-            })
+            field
+                .ident
+                .as_ref()
+                .map(|ident| (ident.clone(), field.ty.clone()))
         })
         .collect();
 
@@ -38,7 +38,10 @@ pub(crate) fn handler(
 
     // 生成 FromRow 的 try_get 调用
     let field_idents: Vec<_> = field_info.iter().map(|(ident, _)| ident).collect();
-    let field_names: Vec<String> = field_info.iter().map(|(ident, _)| ident.to_string()).collect();
+    let field_names: Vec<String> = field_info
+        .iter()
+        .map(|(ident, _)| ident.to_string())
+        .collect();
 
     let ret = quote! {
         impl ::conservator::Selectable for #ident {
@@ -57,4 +60,3 @@ pub(crate) fn handler(
 
     Ok(ret)
 }
-
