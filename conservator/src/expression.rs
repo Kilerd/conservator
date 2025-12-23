@@ -239,6 +239,14 @@ impl Expression {
         SqlResult { sql, values }
     }
 
+    /// 从指定的参数索引开始构建 SQL
+    /// 
+    /// 返回 (sql, values, next_param_index)
+    /// 用于在更大的查询中嵌入表达式
+    pub fn build_with_offset(self, start_param: usize) -> (String, Vec<Value>, usize) {
+        self.build_internal(start_param)
+    }
+
     /// 内部构建方法（使用带引号的字段名）
     /// 
     /// 返回 (sql, values, next_param_index)

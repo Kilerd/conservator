@@ -53,6 +53,19 @@ impl<T> Field<T> {
     }
 }
 
+// 实现 From/Into 用于转换为 FieldInfo
+impl<T> From<Field<T>> for FieldInfo {
+    fn from(field: Field<T>) -> Self {
+        field.info()
+    }
+}
+
+impl<T> From<&Field<T>> for FieldInfo {
+    fn from(field: &Field<T>) -> Self {
+        field.info()
+    }
+}
+
 // 为实现了 IntoValue 的类型提供表达式构建方法
 impl<T: IntoValue> Field<T> {
     /// 创建 field = value 表达式

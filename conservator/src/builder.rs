@@ -1,0 +1,332 @@
+use std::marker::PhantomData;
+
+use crate::{Domain, Expression, FieldInfo, SqlResult, Value};
+
+/// 排序方向
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Order {
+    /// 升序
+    Asc,
+    /// 降序
+    Desc,
+}
+
+impl Order {
+    fn to_sql(&self) -> &'static str {
+        match self {
+            Order::Asc => "ASC",
+            Order::Desc => "DESC",
+        }
+    }
+}
+
+/// JOIN 类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinType {
+    /// INNER JOIN
+    Inner,
+    /// LEFT JOIN
+    Left,
+    /// RIGHT JOIN
+    Right,
+}
+
+impl JoinType {
+    fn to_sql(&self) -> &'static str {
+        match self {
+            JoinType::Inner => "INNER JOIN",
+            JoinType::Left => "LEFT JOIN",
+            JoinType::Right => "RIGHT JOIN",
+        }
+    }
+}
+
+/// JOIN 子句
+#[derive(Debug, Clone)]
+pub struct JoinClause {
+    join_type: JoinType,
+    table: String,
+    on: Expression,
+}
+
+/// SELECT 查询构建器
+/// 
+/// 用于构建类型安全的 SELECT 查询
+/// 
+/// # Example
+/// ```ignore
+/// let result = SelectBuilder::<User>::new()
+///     .filter(User::COLUMNS.id.eq(1))
+///     .order_by(User::COLUMNS.id, Order::Asc)
+///     .limit(10)
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct SelectBuilder<T: Domain> {
+    filter_expr: Option<Expression>,
+    order_by: Vec<(FieldInfo, Order)>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    group_by: Vec<FieldInfo>,
+    joins: Vec<JoinClause>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Domain> Default for SelectBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Domain> SelectBuilder<T> {
+    /// 创建新的查询构建器
+    pub fn new() -> Self {
+        Self {
+            filter_expr: None,
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            group_by: Vec::new(),
+            joins: Vec::new(),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// 添加 WHERE 条件
+    /// 
+    /// 多次调用会用 AND 组合条件
+    pub fn filter(mut self, expr: Expression) -> Self {
+        self.filter_expr = match self.filter_expr {
+            Some(existing) => Some(existing & expr),
+            None => Some(expr),
+        };
+        self
+    }
+
+    /// 添加 ORDER BY 子句
+    pub fn order_by<F>(mut self, field: F, order: Order) -> Self
+    where
+        F: Into<FieldInfo>,
+    {
+        self.order_by.push((field.into(), order));
+        self
+    }
+
+    /// 设置 LIMIT
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// 设置 OFFSET
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// 添加 GROUP BY 子句
+    pub fn group_by<F>(mut self, field: F) -> Self
+    where
+        F: Into<FieldInfo>,
+    {
+        self.group_by.push(field.into());
+        self
+    }
+
+    /// 添加 INNER JOIN
+    pub fn join(mut self, table: &str, on: Expression) -> Self {
+        self.joins.push(JoinClause {
+            join_type: JoinType::Inner,
+            table: table.to_string(),
+            on,
+        });
+        self
+    }
+
+    /// 添加 LEFT JOIN
+    pub fn left_join(mut self, table: &str, on: Expression) -> Self {
+        self.joins.push(JoinClause {
+            join_type: JoinType::Left,
+            table: table.to_string(),
+            on,
+        });
+        self
+    }
+
+    /// 添加 RIGHT JOIN
+    pub fn right_join(mut self, table: &str, on: Expression) -> Self {
+        self.joins.push(JoinClause {
+            join_type: JoinType::Right,
+            table: table.to_string(),
+            on,
+        });
+        self
+    }
+
+    /// 构建完整的 SQL 查询
+    /// 
+    /// 返回包含 SQL 字符串和参数值的 SqlResult
+    pub fn build(self) -> SqlResult {
+        let mut sql_parts = Vec::new();
+        let mut all_values: Vec<Value> = Vec::new();
+        let mut param_idx = 1usize;
+
+        // SELECT 子句
+        let columns = T::COLUMN_NAMES
+            .iter()
+            .map(|name| format!("\"{}\"", name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql_parts.push(format!("SELECT {} FROM {}", columns, T::TABLE_NAME));
+
+        // JOIN 子句
+        for join in self.joins {
+            let (on_sql, on_values, next_idx) = join.on.build_with_offset(param_idx);
+            sql_parts.push(format!("{} {} ON {}", join.join_type.to_sql(), join.table, on_sql));
+            all_values.extend(on_values);
+            param_idx = next_idx;
+        }
+
+        // WHERE 子句
+        if let Some(expr) = self.filter_expr {
+            let (where_sql, where_values, next_idx) = expr.build_with_offset(param_idx);
+            sql_parts.push(format!("WHERE {}", where_sql));
+            all_values.extend(where_values);
+            param_idx = next_idx;
+        }
+
+        // GROUP BY 子句
+        if !self.group_by.is_empty() {
+            let group_by_cols = self
+                .group_by
+                .iter()
+                .map(|f| f.quoted_name())
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql_parts.push(format!("GROUP BY {}", group_by_cols));
+        }
+
+        // ORDER BY 子句
+        if !self.order_by.is_empty() {
+            let order_by_cols = self
+                .order_by
+                .iter()
+                .map(|(f, o)| format!("{} {}", f.quoted_name(), o.to_sql()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql_parts.push(format!("ORDER BY {}", order_by_cols));
+        }
+
+        // LIMIT 子句
+        if let Some(limit) = self.limit {
+            sql_parts.push(format!("LIMIT {}", limit));
+        }
+
+        // OFFSET 子句
+        if let Some(offset) = self.offset {
+            sql_parts.push(format!("OFFSET {}", offset));
+        }
+
+        let _ = param_idx; // 消除未使用警告
+
+        SqlResult {
+            sql: sql_parts.join(" "),
+            values: all_values,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expression::{Expression, Operator, Value};
+
+    // 模拟一个 Domain 实现用于测试
+    struct TestUser;
+
+    #[async_trait::async_trait]
+    impl Domain for TestUser {
+        const PK_FIELD_NAME: &'static str = "id";
+        const TABLE_NAME: &'static str = "users";
+        const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
+
+        type PrimaryKey = i32;
+
+    }
+
+    fn id_field() -> FieldInfo {
+        FieldInfo::new("id", "users", true)
+    }
+
+    fn name_field() -> FieldInfo {
+        FieldInfo::new("name", "users", false)
+    }
+
+    #[test]
+    fn test_simple_select() {
+        let result = SelectBuilder::<TestUser>::new().build();
+        assert_eq!(result.sql, "SELECT \"id\", \"name\", \"email\" FROM users");
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_filter() {
+        let expr = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let result = SelectBuilder::<TestUser>::new().filter(expr).build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users WHERE \"id\" = $1"
+        );
+        assert_eq!(result.values.len(), 1);
+    }
+
+    #[test]
+    fn test_select_with_order_by() {
+        let result = SelectBuilder::<TestUser>::new()
+            .order_by(id_field(), Order::Asc)
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users ORDER BY \"id\" ASC"
+        );
+    }
+
+    #[test]
+    fn test_select_with_limit_offset() {
+        let result = SelectBuilder::<TestUser>::new()
+            .limit(10)
+            .offset(20)
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users LIMIT 10 OFFSET 20"
+        );
+    }
+
+    #[test]
+    fn test_select_with_group_by() {
+        let result = SelectBuilder::<TestUser>::new()
+            .group_by(name_field())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users GROUP BY \"name\""
+        );
+    }
+
+    #[test]
+    fn test_complex_select() {
+        let expr = Expression::comparison(id_field(), Operator::Gt, Value::I32(10));
+        let result = SelectBuilder::<TestUser>::new()
+            .filter(expr)
+            .order_by(name_field(), Order::Desc)
+            .limit(50)
+            .offset(100)
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users WHERE \"id\" > $1 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
+        );
+        assert_eq!(result.values.len(), 1);
+    }
+}

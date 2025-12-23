@@ -125,6 +125,12 @@ pub(crate) fn handler(
             #field_ident: ::conservator::Field::new(#field_name, #table_name, #is_pk)
         }
     });
+    
+    // 生成列名数组
+    let column_names: Vec<String> = all_fields
+        .iter()
+        .map(|(ident, _, _)| ident.to_string())
+        .collect();
 
     let find_by_id_sql = find_by_id(&crud_opts.table, &pk_field_name);
     let fetch_all_sql = fetch_all(&crud_opts.table);
@@ -149,6 +155,7 @@ pub(crate) fn handler(
         impl ::conservator::Domain for #ident {
                 const PK_FIELD_NAME: &'static str = #pk_field_name;
                 const TABLE_NAME: &'static str = #table_name;
+                const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
     
                 type PrimaryKey = #pk_field_type;
     

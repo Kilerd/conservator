@@ -3,9 +3,11 @@ pub use conservator_macro::{auto, sql, Creatable, Domain};
 
 mod field;
 mod expression;
+mod builder;
 
 pub use field::Field;
 pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
+pub use builder::{JoinType, Order, SelectBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
@@ -23,13 +25,21 @@ pub struct ExistsRow {
 pub trait Domain: Sized {
     const PK_FIELD_NAME: &'static str;
     const TABLE_NAME: &'static str;
+    /// 所有列名（用于 SELECT 语句）
+    const COLUMN_NAMES: &'static [&'static str];
 
     type PrimaryKey;
+
+    fn select() -> SelectBuilder<Self> {
+        SelectBuilder::<Self>::new()
+    }
 
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
         pk: &Self::PrimaryKey,
         executor: E,
-    ) -> Result<Option<Self>, sqlx::Error>;
+    ) -> Result<Option<Self>, sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn fetch_one_by_pk<
         'e,
@@ -38,11 +48,15 @@ pub trait Domain: Sized {
     >(
         pk: &Self::PrimaryKey,
         executor: E,
-    ) -> Result<Self, ::sqlx::Error>;
+    ) -> Result<Self, ::sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn fetch_all<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         executor: E,
-    ) -> Result<Vec<Self>, ::sqlx::Error>;
+    ) -> Result<Vec<Self>, ::sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn create<
         'e,
@@ -52,22 +66,30 @@ pub trait Domain: Sized {
     >(
         data: C,
         executor: E,
-    ) -> Result<Self, ::sqlx::Error>;
+    ) -> Result<Self, ::sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: Creatable>(
         data: Vec<C>,
         executor: E,
-    ) -> Result<(), ::sqlx::Error>;
+    ) -> Result<(), ::sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         pk: &Self::PrimaryKey,
         executor: E,
-    ) -> Result<(), ::sqlx::Error>;
+    ) -> Result<(), ::sqlx::Error>{
+        unimplemented!()
+    }
 
     async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
         entity: Self,
         executor: E,
-    ) -> Result<(), ::sqlx::Error>;
+    ) -> Result<(), ::sqlx::Error>{
+        unimplemented!()
+    }
 }
 
 pub trait Creatable: Send {
