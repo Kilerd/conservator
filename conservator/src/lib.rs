@@ -7,7 +7,7 @@ mod builder;
 
 pub use field::Field;
 pub use expression::{Expression, FieldInfo, IntoValue, Operator, SqlResult, Value};
-pub use builder::{DeleteBuilder, JoinType, Order, SelectBuilder};
+pub use builder::{DeleteBuilder, JoinType, Order, SelectBuilder, UpdateBuilder};
 
 pub use sqlx::migrate;
 pub use sqlx::postgres::PgPoolOptions;
@@ -36,6 +36,10 @@ pub trait Domain: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgre
 
     fn delete() -> DeleteBuilder<Self> {
         DeleteBuilder::<Self>::new()
+    }
+
+    fn update_query() -> UpdateBuilder<Self> {
+        UpdateBuilder::<Self>::new()
     }
 
     async fn find_by_pk<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(

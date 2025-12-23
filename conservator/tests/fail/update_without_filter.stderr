@@ -1,0 +1,13 @@
+error[E0599]: no method named `build` found for struct `UpdateBuilder<User, true>` in the current scope
+  --> tests/fail/update_without_filter.rs:18:10
+   |
+16 |       let _result = User::update_query()
+   |  ___________________-
+17 | |         .set(User::COLUMNS.name, "new_name".to_string())
+18 | |         .build();
+   | |         -^^^^^ method not found in `UpdateBuilder<User, true>`
+   | |_________|
+   |
+   |
+   = note: the method was found for
+           - `UpdateBuilder<T, true, true>`

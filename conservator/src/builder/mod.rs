@@ -1,13 +1,13 @@
 mod select;
+mod update;
+mod delete;
 // TODO: 待实现
 // mod insert;
-// mod update;
-mod delete;
 
 pub use select::SelectBuilder;
-// pub use insert::InsertBuilder;
-// pub use update::UpdateBuilder;
+pub use update::UpdateBuilder;
 pub use delete::DeleteBuilder;
+// pub use insert::InsertBuilder;
 
 use crate::Expression;
 
