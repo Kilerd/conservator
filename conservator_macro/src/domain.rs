@@ -40,10 +40,14 @@ fn update_sql(table_name: &str, primary_field_name: &str, non_pk_fields: &[syn::
 pub(crate) fn handler(
     input: proc_macro2::TokenStream,
 ) -> Result<proc_macro2::TokenStream, (Span, &'static str)> {
-    let x1 = parse2::<DeriveInput>(input).unwrap();
-    let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1).unwrap();
+    let x1 = parse2::<DeriveInput>(input.clone())
+        .map_err(|e| (e.span(), "failed to parse struct definition"))?;
 
-    let fields = crud_opts.data.take_struct().unwrap();
+    let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1)
+        .map_err(|_| (x1.span(), "failed to parse #[domain] attributes"))?;
+
+    let fields = crud_opts.data.take_struct()
+        .ok_or((x1.span(), "Domain can only be derived for structs, not enums"))?;
 
     // 收集所有字段信息用于生成 Columns 结构体
     let all_fields: Vec<_> = fields
@@ -70,6 +74,7 @@ pub(crate) fn handler(
         .filter(|field| field.primary_key == Some(true))
         .collect_vec();
 
+    // Validate primary key configuration
     let pk_field = match pk_count.len() {
         0 => {
             return Err((
@@ -77,13 +82,18 @@ pub(crate) fn handler(
                 "missing primary key, using #[domain(primary_key)] to identify",
             ));
         }
-        1 => pk_count.pop().unwrap(),
+        1 => pk_count
+            .pop()
+            .expect("BUG: pk_count.len() == 1 but pop() returned None"),
         _ => {
             return Err((x1.span(), "mutliple primary key detect"));
         }
     };
-    let pk_field_ident = pk_field.ident.unwrap();
-    let pk_field_name = pk_field_ident.clone().to_string();
+
+    let pk_field_ident = pk_field
+        .ident
+        .ok_or((x1.span(), "primary key field must have a name (tuple structs not supported)"))?;
+    let pk_field_name = pk_field_ident.to_string();
     let pk_field_type = pk_field.ty;
 
     let table_name = &crud_opts.table;

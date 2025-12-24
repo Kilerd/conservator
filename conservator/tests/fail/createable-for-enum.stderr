@@ -1,8 +1,5 @@
-error: enum does not support
+error: Creatable can only be derived for structs, not enums
  --> tests/fail/createable-for-enum.rs:4:1
   |
-4 | / pub enum NotSupport {
-5 | |     A,
-6 | |     B,
-7 | | }
-  | |_^
+4 | pub enum NotSupport {
+  | ^^^
