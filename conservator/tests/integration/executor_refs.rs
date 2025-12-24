@@ -46,7 +46,7 @@ async fn create_test_pool() -> PooledConnection {
     admin_config.password = Some("postgres".to_string());
     admin_config.dbname = Some("postgres".to_string());
     admin_config.pool = Some(PoolConfig {
-        max_size: 2,
+        max_size: 20,
         ..Default::default()
     });
 
@@ -67,7 +67,7 @@ async fn create_test_pool() -> PooledConnection {
     config.password = Some("postgres".to_string());
     config.dbname = Some(db_name);
     config.pool = Some(PoolConfig {
-        max_size: 2,
+        max_size: 20,
         ..Default::default()
     });
 
