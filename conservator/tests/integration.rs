@@ -1,4 +1,5 @@
 use conservator::{Creatable, Domain, Executor, PooledConnection, Selectable};
+use deadpool_postgres::{Config, PoolConfig};
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::OnceLock;
 use testcontainers::{clients::Cli, Container};
@@ -102,8 +103,18 @@ async fn setup_test_db() -> PooledConnection {
     let db_name = format!("test_db_{}", db_id);
 
     // 连接到默认 postgres 数据库创建新数据库
-    let admin_url = format!("postgres://postgres:postgres@localhost:{}/postgres", port);
-    let admin_pool = PooledConnection::from_url(&admin_url).unwrap();
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut admin_config = Config::new();
+    admin_config.host = Some("localhost".to_string());
+    admin_config.port = Some(port);
+    admin_config.user = Some("postgres".to_string());
+    admin_config.password = Some("postgres".to_string());
+    admin_config.dbname = Some("postgres".to_string());
+    admin_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    let admin_pool = PooledConnection::from_config(admin_config).unwrap();
     let admin_client = admin_pool.get().await.unwrap();
 
     admin_client
@@ -114,11 +125,18 @@ async fn setup_test_db() -> PooledConnection {
     drop(admin_client);
 
     // 连接到新创建的数据库
-    let db_url = format!(
-        "postgres://postgres:postgres@localhost:{}/{}",
-        port, db_name
-    );
-    let pool = PooledConnection::from_url(&db_url).unwrap();
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut test_config = Config::new();
+    test_config.host = Some("localhost".to_string());
+    test_config.port = Some(port);
+    test_config.user = Some("postgres".to_string());
+    test_config.password = Some("postgres".to_string());
+    test_config.dbname = Some(db_name.clone());
+    test_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    let pool = PooledConnection::from_config(test_config).unwrap();
     let client = pool.get().await.unwrap();
 
     // 创建测试表

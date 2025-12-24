@@ -1,6 +1,7 @@
 //! Migration system integration tests
 
 use conservator::{AppliedInfo, MigrateReport, Migration, Migrator, PooledConnection};
+use deadpool_postgres::{Config, PoolConfig};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 use testcontainers::{clients::Cli, Container};
@@ -20,11 +21,21 @@ async fn setup_test_db() -> PooledConnection {
     let container = get_container();
     let port = container.get_host_port_ipv4(5432);
     let db_num = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let db_name = format!("migrate_test_{}", db_num);
+    let db_name = format!("migrate_integration_test_{}", db_num);
 
     // Create database
-    let admin_url = format!("postgres://postgres:postgres@localhost:{}/postgres", port);
-    let admin_pool = PooledConnection::from_url(&admin_url).unwrap();
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut admin_config = Config::new();
+    admin_config.host = Some("localhost".to_string());
+    admin_config.port = Some(port);
+    admin_config.user = Some("postgres".to_string());
+    admin_config.password = Some("postgres".to_string());
+    admin_config.dbname = Some("postgres".to_string());
+    admin_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    let admin_pool = PooledConnection::from_config(admin_config).unwrap();
     let conn = admin_pool.get().await.unwrap();
 
     use std::ops::Deref;
@@ -39,11 +50,18 @@ async fn setup_test_db() -> PooledConnection {
     drop(conn);
 
     // Connect to test database
-    let test_url = format!(
-        "postgres://postgres:postgres@localhost:{}/{}",
-        port, db_name
-    );
-    PooledConnection::from_url(&test_url).unwrap()
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut test_config = Config::new();
+    test_config.host = Some("localhost".to_string());
+    test_config.port = Some(port);
+    test_config.user = Some("postgres".to_string());
+    test_config.password = Some("postgres".to_string());
+    test_config.dbname = Some(db_name);
+    test_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    PooledConnection::from_config(test_config).unwrap()
 }
 
 #[tokio::test]

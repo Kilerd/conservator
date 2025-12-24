@@ -3,6 +3,7 @@
 //! Tests all 5 action types (fetch, exists, find, fetch_all, execute) with real database.
 
 use conservator::{sql, Domain, Executor, PooledConnection, Selectable};
+use deadpool_postgres::{Config, PoolConfig};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 use testcontainers::{clients::Cli, Container};
@@ -22,14 +23,21 @@ async fn setup_test_db() -> PooledConnection {
     let container = get_container();
     let port = container.get_host_port_ipv4(5432);
     let db_num = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let db_name = format!("test_db_{}", db_num);
+    let db_name = format!("sql_macro_test_{}", db_num);
 
     // Create database
-    let admin_pool = conservator::PooledConnection::from_url(&format!(
-        "postgres://postgres:postgres@127.0.0.1:{}/postgres",
-        port
-    ))
-    .unwrap();
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut admin_config = Config::new();
+    admin_config.host = Some("127.0.0.1".to_string());
+    admin_config.port = Some(port);
+    admin_config.user = Some("postgres".to_string());
+    admin_config.password = Some("postgres".to_string());
+    admin_config.dbname = Some("postgres".to_string());
+    admin_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    let admin_pool = conservator::PooledConnection::from_config(admin_config).unwrap();
 
     let client = admin_pool.get().await.unwrap();
     client
@@ -38,11 +46,18 @@ async fn setup_test_db() -> PooledConnection {
         .unwrap();
 
     // Connect to new database
-    let pool = conservator::PooledConnection::from_url(&format!(
-        "postgres://postgres:postgres@127.0.0.1:{}/{}",
-        port, db_name
-    ))
-    .unwrap();
+    // Use small pool size (2) for tests to avoid "too many clients" error in CI
+    let mut test_config = Config::new();
+    test_config.host = Some("127.0.0.1".to_string());
+    test_config.port = Some(port);
+    test_config.user = Some("postgres".to_string());
+    test_config.password = Some("postgres".to_string());
+    test_config.dbname = Some(db_name.clone());
+    test_config.pool = Some(PoolConfig {
+        max_size: 2,
+        ..Default::default()
+    });
+    let pool = conservator::PooledConnection::from_config(test_config).unwrap();
 
     // Create test table
     let client = pool.get().await.unwrap();
