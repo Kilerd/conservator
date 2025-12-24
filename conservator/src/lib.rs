@@ -2,7 +2,7 @@
 extern crate self as conservator;
 
 use async_trait::async_trait;
-pub use conservator_macro::{sql, Creatable, Domain, Selectable};
+pub use conservator_macro::{Creatable, Domain, Selectable, sql};
 
 mod builder;
 mod conn;

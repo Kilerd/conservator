@@ -2,7 +2,7 @@ use darling::FromDeriveInput;
 use itertools::Itertools;
 use proc_macro_error::abort;
 use quote::quote;
-use syn::{parse2, Data, DeriveInput};
+use syn::{Data, DeriveInput, parse2};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(attributes(crud))]

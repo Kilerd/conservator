@@ -1,6 +1,6 @@
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse2, DeriveInput, Fields};
+use syn::{DeriveInput, Fields, parse2};
 
 pub(crate) fn handler(
     input: proc_macro2::TokenStream,

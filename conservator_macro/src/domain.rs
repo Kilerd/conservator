@@ -3,7 +3,7 @@ use itertools::Itertools;
 use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{parse2, DeriveInput};
+use syn::{DeriveInput, parse2};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(attributes(domain))]

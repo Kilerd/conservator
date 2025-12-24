@@ -2,9 +2,9 @@
 
 use conservator::{AppliedInfo, MigrateReport, Migration, Migrator, PooledConnection};
 use deadpool_postgres::{Config, PoolConfig};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
-use testcontainers::{clients::Cli, Container};
+use std::sync::atomic::{AtomicU32, Ordering};
+use testcontainers::{Container, clients::Cli};
 use testcontainers_modules::postgres::Postgres;
 
 // Shared Docker client and container

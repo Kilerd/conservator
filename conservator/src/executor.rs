@@ -4,7 +4,7 @@
 
 use crate::Error;
 use async_trait::async_trait;
-use tokio_postgres::{types::FromSql, types::ToSql, Row};
+use tokio_postgres::{Row, types::FromSql, types::ToSql};
 
 /// 统一的数据库执行器 trait
 ///

@@ -1,8 +1,8 @@
 use conservator::{Creatable, Domain, Executor, PooledConnection, Selectable};
 use deadpool_postgres::{Config, PoolConfig};
-use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::OnceLock;
-use testcontainers::{clients::Cli, Container};
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use testcontainers::{Container, clients::Cli};
 use testcontainers_modules::postgres::Postgres;
 
 // ========== 测试实体定义 ==========
@@ -1745,9 +1745,11 @@ async fn test_bulk_insert_and_query() {
         .unwrap();
 
     assert!(result.len() <= 10);
-    assert!(result
-        .iter()
-        .all(|u| u.is_active && u.age >= 30 && u.age <= 40));
+    assert!(
+        result
+            .iter()
+            .all(|u| u.is_active && u.age >= 30 && u.age <= 40)
+    );
 }
 
 // ==========================================

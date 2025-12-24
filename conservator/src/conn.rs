@@ -5,7 +5,7 @@
 use crate::{Error, Executor};
 use async_trait::async_trait;
 use deadpool_postgres::{Config, Pool, Runtime};
-use tokio_postgres::{types::FromSql, types::ToSql, NoTls, Row};
+use tokio_postgres::{NoTls, Row, types::FromSql, types::ToSql};
 
 /// 连接池包装器
 ///

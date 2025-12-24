@@ -2,11 +2,11 @@
 //!
 //! Tests all 5 action types (fetch, exists, find, fetch_all, execute) with real database.
 
-use conservator::{sql, Domain, Executor, PooledConnection, Selectable};
+use conservator::{Domain, Executor, PooledConnection, Selectable, sql};
 use deadpool_postgres::{Config, PoolConfig};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
-use testcontainers::{clients::Cli, Container};
+use std::sync::atomic::{AtomicU32, Ordering};
+use testcontainers::{Container, clients::Cli};
 use testcontainers_modules::postgres::Postgres;
 
 // Shared Docker client and container

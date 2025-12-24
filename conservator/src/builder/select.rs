@@ -283,8 +283,8 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expression::{Expression, Operator};
     use crate::Value;
+    use crate::expression::{Expression, Operator};
 
     // 模拟一个 Domain 实现用于测试
     struct TestUser {

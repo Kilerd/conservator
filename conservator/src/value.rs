@@ -4,7 +4,7 @@
 
 use std::error::Error;
 use std::fmt::Debug;
-use tokio_postgres::types::{private::BytesMut, to_sql_checked, FromSql, IsNull, ToSql, Type};
+use tokio_postgres::types::{FromSql, IsNull, ToSql, Type, private::BytesMut, to_sql_checked};
 use uuid::Uuid;
 
 // ============================================================================

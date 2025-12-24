@@ -8,8 +8,8 @@ use regex::Regex;
 use strum::EnumString;
 use syn::spanned::Spanned;
 use syn::{
-    parse2, AngleBracketedGenericArguments, Expr, ItemFn, Lit, PathArguments, ReturnType, Stmt,
-    Type,
+    AngleBracketedGenericArguments, Expr, ItemFn, Lit, PathArguments, ReturnType, Stmt, Type,
+    parse2,
 };
 
 fn extract_inner_type<'a>(ty: &'a Type, wrapper: &'a str) -> Option<&'a Type> {
