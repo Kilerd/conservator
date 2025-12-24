@@ -46,8 +46,10 @@ pub(crate) fn handler(
     let crud_opts: DomainOpts = DomainOpts::from_derive_input(&x1)
         .map_err(|_| (x1.span(), "failed to parse #[domain] attributes"))?;
 
-    let fields = crud_opts.data.take_struct()
-        .ok_or((x1.span(), "Domain can only be derived for structs, not enums"))?;
+    let fields = crud_opts.data.take_struct().ok_or((
+        x1.span(),
+        "Domain can only be derived for structs, not enums",
+    ))?;
 
     // 收集所有字段信息用于生成 Columns 结构体
     let all_fields: Vec<_> = fields
@@ -90,9 +92,10 @@ pub(crate) fn handler(
         }
     };
 
-    let pk_field_ident = pk_field
-        .ident
-        .ok_or((x1.span(), "primary key field must have a name (tuple structs not supported)"))?;
+    let pk_field_ident = pk_field.ident.ok_or((
+        x1.span(),
+        "primary key field must have a name (tuple structs not supported)",
+    ))?;
     let pk_field_name = pk_field_ident.to_string();
     let pk_field_type = pk_field.ty;
 

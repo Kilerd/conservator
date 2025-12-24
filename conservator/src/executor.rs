@@ -102,11 +102,9 @@ where
         0 => Ok(None),
         1 => {
             // SAFETY: we just checked rows.len() == 1
-            Ok(Some(
-                rows.into_iter()
-                    .next()
-                    .expect("BUG: vec has exactly one element but next() returned None"),
-            ))
+            Ok(Some(rows.into_iter().next().expect(
+                "BUG: vec has exactly one element but next() returned None",
+            )))
         }
         count => Err(Error::TooManyRows(count)),
     }

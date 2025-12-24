@@ -11,18 +11,31 @@ struct CreatableOpts {
     ident: syn::Ident,
 }
 
-pub(crate) fn handler(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, (Span, String)> {
-    let x1 = parse2::<DeriveInput>(input.clone())
-        .map_err(|e| (e.span(), format!("failed to parse struct definition: {}", e)))?;
+pub(crate) fn handler(
+    input: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, (Span, String)> {
+    let x1 = parse2::<DeriveInput>(input.clone()).map_err(|e| {
+        (
+            e.span(),
+            format!("failed to parse struct definition: {}", e),
+        )
+    })?;
 
-    let creatable_opts: CreatableOpts = CreatableOpts::from_derive_input(&x1)
-        .map_err(|e| (x1.span(), format!("failed to parse #[creatable] attributes: {}", e)))?;
+    let creatable_opts: CreatableOpts = CreatableOpts::from_derive_input(&x1).map_err(|e| {
+        (
+            x1.span(),
+            format!("failed to parse #[creatable] attributes: {}", e),
+        )
+    })?;
 
     let ident = creatable_opts.ident;
 
     // Early return: only structs are supported
     let Data::Struct(ref body) = x1.data else {
-        return Err((x1.span(), "Creatable can only be derived for structs, not enums".to_string()));
+        return Err((
+            x1.span(),
+            "Creatable can only be derived for structs, not enums".to_string(),
+        ));
     };
 
     // Extract field information
@@ -32,7 +45,7 @@ pub(crate) fn handler(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
         .iter()
         .map(|it| {
             it.as_ref()
-                .map(|ident| format!("\"{}\"", ident.to_string()))
+                .map(|ident| format!("\"{}\"", ident))
                 .ok_or_else(|| (x1.span(), "field identifier is missing".to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?

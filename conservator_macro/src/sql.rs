@@ -16,8 +16,7 @@ use syn::{
 /// Static regex for matching SQL parameters (e.g., :param_name)
 /// This is compiled once at first use and cached for subsequent macro expansions
 static PARAM_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[^:]:(\w+)")
-        .expect("BUG: invalid regex pattern in conservator_macro")
+    Regex::new(r"[^:]:(\w+)").expect("BUG: invalid regex pattern in conservator_macro")
 });
 
 fn extract_inner_type<'a>(ty: &'a Type, wrapper: &'a str) -> Option<&'a Type> {
