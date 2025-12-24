@@ -42,14 +42,11 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
 
         let fields_len = fields.len();
 
-        let bind_list_for_query_as = fields.iter().map(|it| {
-            quote! { .bind(self. #it)}
-        });
-        let bind_list_for_query = fields.iter().map(|it| {
-            quote! { .bind(self. #it)}
-        });
-        let bind_list_for_query_scalar = fields.iter().map(|it| {
-            quote! { .bind(self. #it)}
+        // 生成 get_values 方法的字段转换
+        let values_list = fields.iter().map(|it| {
+            quote! {
+                ::conservator::IntoValue::into_value(self.#it.clone())
+            }
         });
 
         quote! {
@@ -62,6 +59,7 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
                 fn get_insert_sql(&self) -> &str {
                     #insert_sql
                 }
+
                 fn get_batch_insert_sql(&self, idx: usize) -> String {
                     let mut ret = String::new();
                     ret.push_str("(");
@@ -74,26 +72,16 @@ pub(crate) fn handle_creatable(input: proc_macro2::TokenStream) -> proc_macro2::
                     ret.push_str(")");
                     ret
                 }
-                fn build_for_query_as<'q, O>(
-                    self,
-                    e: ::sqlx::query::QueryAs<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,>,
-                ) -> ::sqlx::query::QueryAs<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments,> {
-                    e
-                    #(#bind_list_for_query_as)*
+
+                fn get_values(&self) -> Vec<::conservator::Value> {
+                    vec![
+                        #(#values_list),*
+                    ]
                 }
-                fn build_for_query<'q>(
-                    self,
-                    e: ::sqlx::query::Query<'q, ::sqlx::Postgres, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments>,
-                ) -> ::sqlx::query::Query<'q, ::sqlx::Postgres, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments> {
-                    e
-                    #(#bind_list_for_query)*
-                }
-                fn bind_to_query_scalar<'q, O>(
-                    self,
-                    e: ::sqlx::query::QueryScalar<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments>,
-                ) -> ::sqlx::query::QueryScalar<'q, ::sqlx::Postgres, O, <::sqlx::Postgres as ::sqlx::database::HasArguments<'q>>::Arguments> {
-                    e
-                    #(#bind_list_for_query_scalar)*
+
+                fn get_batch_values(&self, _idx: usize) -> Vec<::conservator::Value> {
+                    // 批量插入时，每个项目的值计算方式相同
+                    self.get_values()
                 }
             }
         }

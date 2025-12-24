@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{Domain, Expression, FieldInfo, Selectable, SqlResult, Value};
+use crate::{Domain, Executor, Expression, FieldInfo, Selectable, SqlResult, Value};
 
 use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
 
@@ -224,51 +224,98 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     }
 
     /// 执行查询并返回单个结果
-    pub async fn one<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-        self,
-        executor: E,
-    ) -> Result<Returning, sqlx::Error>
+    pub async fn one<E: Executor>(self, executor: &E) -> Result<Returning, crate::Error>
     where
-        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: Selectable,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
-        for value in sql_result.values {
-            query = value.bind_to(query);
-        }
-        query.fetch_one(executor).await
+
+        // 将 Value 转换为 ToSql 参数
+        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = sql_result
+            .values
+            .into_iter()
+            .map(|v| v.to_tokio_sql_param())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // 转换为引用数组
+        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
+            .collect();
+
+        // 执行查询
+        let row = executor.query_one(&sql_result.sql, &param_refs).await?;
+
+        // 调用 Selectable 的 from_row 方法
+        Returning::from_row(&row)
     }
 
     /// 执行查询并返回所有结果
-    pub async fn all<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-        self,
-        executor: E,
-    ) -> Result<Vec<Returning>, sqlx::Error>
+    pub async fn all<E: Executor>(self, executor: &E) -> Result<Vec<Returning>, crate::Error>
     where
-        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: Selectable,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
-        for value in sql_result.values {
-            query = value.bind_to(query);
+
+        // 将 Value 转换为 ToSql 参数
+        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = sql_result
+            .values
+            .into_iter()
+            .map(|v| v.to_tokio_sql_param())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // 转换为引用数组
+        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
+            .collect();
+
+        // 执行查询
+        let rows = executor.query(&sql_result.sql, &param_refs).await?;
+
+        // 转换每一行
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            results.push(Returning::from_row(&row)?);
         }
-        query.fetch_all(executor).await
+        Ok(results)
     }
 
     /// 执行查询并返回可选结果
-    pub async fn optional<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
+    pub async fn optional<E: Executor>(
         self,
-        executor: E,
-    ) -> Result<Option<Returning>, sqlx::Error>
+        executor: &E,
+    ) -> Result<Option<Returning>, crate::Error>
     where
-        Returning: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
+        Returning: Selectable,
     {
         let sql_result = self.build();
-        let mut query = sqlx::query_as::<_, Returning>(&sql_result.sql);
-        for value in sql_result.values {
-            query = value.bind_to(query);
+
+        // 将 Value 转换为 ToSql 参数
+        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = sql_result
+            .values
+            .into_iter()
+            .map(|v| v.to_tokio_sql_param())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // 转换为引用数组
+        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
+            .collect();
+
+        // 执行查询（使用 query，如果没有行则返回 None）
+        let rows = executor.query(&sql_result.sql, &param_refs).await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(Returning::from_row(&rows[0])?)),
+            _ => {
+                // 如果返回多行，这是一个错误（optional 应该只返回 0 或 1 行）
+                // 使用 query_one 来获取正确的错误类型
+                executor.query_one(&sql_result.sql, &param_refs).await?;
+                unreachable!()
+            }
         }
-        query.fetch_optional(executor).await
     }
 }
 
@@ -290,11 +337,8 @@ mod tests {
 
     impl Selectable for TestUser {
         const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
-    }
 
-    impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for TestUser {
-        fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-            use sqlx::Row;
+        fn from_row(row: &tokio_postgres::Row) -> Result<Self, crate::Error> {
             Ok(Self {
                 id: row.try_get("id")?,
                 name: row.try_get("name")?,
@@ -310,10 +354,7 @@ mod tests {
 
         type PrimaryKey = i32;
 
-        async fn update<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-            &self,
-            _executor: E,
-        ) -> Result<(), sqlx::Error> {
+        async fn update<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
             unimplemented!()
         }
     }

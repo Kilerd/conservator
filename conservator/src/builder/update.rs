@@ -1,4 +1,4 @@
-use crate::{Domain, Expression, FieldInfo, SqlResult, Value};
+use crate::{Domain, Executor, Expression, FieldInfo, SqlResult, Value};
 use std::marker::PhantomData;
 
 /// UPDATE 查询构建器
@@ -105,17 +105,24 @@ impl<T: Domain> UpdateBuilder<T, true, true> {
     }
 
     /// 执行 UPDATE 语句
-    pub async fn execute<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-        self,
-        executor: E,
-    ) -> Result<u64, sqlx::Error> {
+    pub async fn execute<E: Executor>(self, executor: &E) -> Result<u64, crate::Error> {
         let sql_result = self.build();
-        let mut query = sqlx::query(&sql_result.sql);
-        for value in sql_result.values {
-            query = value.bind_to_query(query);
-        }
-        let result = query.execute(executor).await?;
-        Ok(result.rows_affected())
+
+        // 将 Value 转换为 ToSql 参数
+        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = sql_result
+            .values
+            .into_iter()
+            .map(|v: Value| v.to_tokio_sql_param())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // 转换为引用数组
+        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
+            .collect();
+
+        // 执行查询
+        executor.execute(&sql_result.sql, &param_refs).await
     }
 }
 
@@ -135,11 +142,8 @@ mod tests {
 
     impl Selectable for TestUser {
         const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
-    }
 
-    impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for TestUser {
-        fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-            use sqlx::Row;
+        fn from_row(row: &tokio_postgres::Row) -> Result<Self, crate::Error> {
             Ok(Self {
                 id: row.try_get("id")?,
                 name: row.try_get("name")?,
@@ -154,10 +158,7 @@ mod tests {
         const TABLE_NAME: &'static str = "users";
         type PrimaryKey = i32;
 
-        async fn update<'e, 'c: 'e, E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>>(
-            &self,
-            _executor: E,
-        ) -> Result<(), sqlx::Error> {
+        async fn update<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
             unimplemented!()
         }
     }

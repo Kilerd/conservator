@@ -142,17 +142,14 @@ pub(crate) fn handler(
     // 实现 Selectable trait
     impl ::conservator::Selectable for #ident {
         const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
-    }
 
-    // 实现 FromRow trait
-    impl<'r> ::sqlx::FromRow<'r, ::sqlx::postgres::PgRow> for #ident {
-        fn from_row(row: &'r ::sqlx::postgres::PgRow) -> Result<Self, ::sqlx::Error> {
-            use ::sqlx::Row;
+        fn from_row(row: &::tokio_postgres::Row) -> Result<Self, ::conservator::Error> {
             Ok(Self {
                 #(#field_idents: row.try_get(#field_names_str)?),*
             })
         }
     }
+
 
     #[::async_trait::async_trait]
     impl ::conservator::Domain for #ident {
@@ -161,142 +158,35 @@ pub(crate) fn handler(
 
         type PrimaryKey = #pk_field_type;
 
-        async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+        async fn update<E: ::conservator::Executor>(
             &self,
-            executor: E,
-        ) -> Result<(), ::sqlx::Error> {
-            ::sqlx::query(#update_sql)
-                #(.bind(&self.#non_pk_field_names))*
-                .bind(&self.#pk_field_ident)
-                .execute(executor)
-                .await?;
+            executor: &E,
+        ) -> Result<(), ::conservator::Error> {
+            use ::conservator::{IntoValue, Value};
+
+            // 收集所有参数值
+            let mut values: Vec<Value> = vec![
+                #(::conservator::IntoValue::into_value(self.#non_pk_field_names.clone())),*
+            ];
+            values.push(::conservator::IntoValue::into_value(self.#pk_field_ident.clone()));
+
+            // 将 Value 转换为 ToSql 参数
+            let params: Vec<Box<dyn ::tokio_postgres::types::ToSql + Sync + Send + 'static>> = values
+                .into_iter()
+                .map(|v| v.to_tokio_sql_param())
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // 转换为引用数组
+            let param_refs: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = params
+                .iter()
+                .map(|p| p.as_ref() as &(dyn ::tokio_postgres::types::ToSql + Sync))
+                .collect();
+
+            executor.execute(#update_sql, &param_refs).await?;
             Ok(())
         }
     }
 
     };
     Ok(ret)
-}
-
-#[cfg(test)]
-mod test {
-    use quote::quote;
-
-    use crate::domain::handler;
-
-    #[test]
-    #[ignore]
-    fn should_render() {
-        let input = quote! {
-            #[derive(Debug, Deserialize, Serialize, Domain, FromRow)]
-            #[domain(table = "users")]
-            pub struct UserEntity {
-                #[domain(primary_key)]
-                pub id: Uuid,
-                pub username: String,
-                pub email: String,
-                pub password: String,
-                pub role: UserRole,
-                pub create_at: DateTime<Utc>,
-                pub last_login_at: DateTime<Utc>,
-            }
-        };
-        let expected_output = quote! {
-
-            #[::async_trait::async_trait]
-            impl ::conservator::Domain for UserEntity {
-                const PK_FIELD_NAME: &'static str = "id";
-                const TABLE_NAME: &'static str = "users";
-                type PrimaryKey = Uuid;
-                async fn find_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-                    pk: &Self::PrimaryKey,
-                    executor: E
-                ) -> Result<Option<Self>, ::sqlx::Error> {
-                    sqlx::query_as("select * from users where \"id\" = $1")
-                        .bind(pk)
-                        .fetch_optional(executor)
-                        .await
-                }
-                async fn fetch_one_by_pk<
-                    'e,
-                    'c: 'e,
-                    E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-                    pk: &Self::PrimaryKey,
-                    executor: E
-                ) -> Result<Self, ::sqlx::Error> {
-                    sqlx::query_as("select * from users where \"id\" = $1")
-                        .bind(pk)
-                        .fetch_one(executor)
-                        .await
-                }
-                async fn fetch_all<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-                    executor: E
-                ) -> Result<Vec<Self>, ::sqlx::Error> {
-                    sqlx::query_as("select * from users")
-                        .fetch_all(executor)
-                        .await
-                }
-                async fn create<
-                    'e,
-                    'c: 'e,
-                    E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>,
-                    C: ::conservator::Creatable
-                >(
-                    data: C,
-                    executor: E
-                ) -> Result<Self, ::sqlx::Error> {
-                    let sql = format!(
-                        "INSERT INTO {} {} VALUES {} returning *",
-                        "users",
-                        data.get_columns(),
-                        data.get_insert_sql()
-                    );
-                    let mut ex = sqlx::query_as(&sql);
-                    data.build(ex).fetch_one(executor).await
-                }
-                async fn batch_create<'data, 'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>, C: ::conservator::Creatable>(
-                    data: &'data [C],
-                    executor: E,
-                ) -> Result<(), ::sqlx::Error> {
-                    if data.is_empty() {
-                        return Ok(());
-                    }
-                    let columns = data[0].get_columns();
-                    let insert_sql = data.iter().map(|it| it.get_insert_sql()).join(",");
-                    let sql = format!("INSERT INTO {} {} VALUES {}", "users", columns, insert_sql);
-                    let mut ex = sqlx::query(&sql);
-                    for item in data {
-                        ex = item.build(ex);
-                    }
-                    ex.execute(executor).await?;
-                    Ok(())
-                }
-
-                async fn delete_by_pk<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(pk: &Self::PrimaryKey, executor: E,) ->Result<(), ::sqlx::Error> {
-                    sqlx::query("delete from users where \"id\" = $1")
-                    .bind(pk)
-                .execute(executor)
-                .await?;
-                    Ok(())
-                }
-
-                async fn update<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(entity:Self, executor: E) ->Result<(), ::sqlx::Error> {
-                    sqlx::query("UPDATE users SET \"username\" = $1, \"email\" = $2, \"password\" = $3, \"role\" = $4, \"create_at\" = $5, \"last_login_at\" = $6 WHERE \"id\" = $7")
-                        .bind(entity.username)
-                        .bind(entity.email)
-                        .bind(entity.password)
-                        .bind(entity.role)
-                        .bind(entity.create_at)
-                        .bind(entity.last_login_at)
-                        .bind(entity.id)
-                        .execute(executor)
-                        .await?;
-                    Ok(())
-                }
-            }
-        };
-
-        let stream = handler(input).unwrap();
-        assert_eq!(expected_output.to_string(), stream.to_string());
-    }
 }

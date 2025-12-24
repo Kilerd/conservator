@@ -46,11 +46,8 @@ pub(crate) fn handler(
     let ret = quote! {
         impl ::conservator::Selectable for #ident {
             const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
-        }
 
-        impl<'r> ::sqlx::FromRow<'r, ::sqlx::postgres::PgRow> for #ident {
-            fn from_row(row: &'r ::sqlx::postgres::PgRow) -> Result<Self, ::sqlx::Error> {
-                use ::sqlx::Row;
+            fn from_row(row: &::tokio_postgres::Row) -> Result<Self, ::conservator::Error> {
                 Ok(Self {
                     #(#field_idents: row.try_get(#field_names)?),*
                 })

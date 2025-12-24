@@ -1,8 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro_error::{abort, proc_macro_error};
 
-mod authorization;
-mod auto;
 mod creatable;
 mod domain;
 mod selectable;
@@ -46,12 +44,6 @@ pub fn derive_selectable_fn(input: TokenStream) -> TokenStream {
 pub fn derive_creatable_fn(input: TokenStream) -> TokenStream {
     let stream2 = proc_macro2::TokenStream::from(input);
     proc_macro::TokenStream::from(creatable::handle_creatable(stream2))
-}
-
-#[proc_macro_attribute]
-pub fn auto(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let stream2 = proc_macro2::TokenStream::from(input);
-    proc_macro::TokenStream::from(auto::handler(stream2))
 }
 
 #[proc_macro_attribute]

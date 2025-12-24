@@ -12,7 +12,7 @@ pub struct User {
 
 // 验证 update 方法可以通过 &self 调用（编译时检查）
 #[allow(dead_code)]
-async fn test_update_signature(user: &User, pool: &conservator::Pool<conservator::Postgres>) {
+async fn test_update_signature(user: &User, pool: &conservator::PooledConnection) {
     // 这行代码验证 update 方法使用 &self 调用
     let _ = user.update(pool).await;
 }

@@ -24,8 +24,8 @@ pub enum Value {
     DateTimeUtc(chrono::DateTime<chrono::Utc>),
     DateTimeFixed(chrono::DateTime<chrono::FixedOffset>),
 
-    // 精确数值（使用 sqlx 内部的 BigDecimal 类型）
-    BigDecimal(sqlx::types::BigDecimal),
+    // 精确数值
+    BigDecimal(bigdecimal::BigDecimal),
 
     // UUID
     Uuid(uuid::Uuid),
@@ -38,88 +38,35 @@ pub enum Value {
 }
 
 impl Value {
-    /// 将 Value 绑定到 sqlx QueryAs 查询
-    pub fn bind_to<'q, O>(
+    /// 将 Value 转换为 tokio-postgres 的 ToSql 参数
+    ///
+    /// 注意：tokio-postgres 需要启用相应的 feature flags 才能支持某些类型
+    /// 返回一个拥有所有权的类型，可以转换为 ToSql
+    pub fn to_tokio_sql_param(
         self,
-        query: sqlx::query::QueryAs<
-            'q,
-            sqlx::Postgres,
-            O,
-            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-        >,
-    ) -> sqlx::query::QueryAs<
-        'q,
-        sqlx::Postgres,
-        O,
-        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-    >
-    where
-        O: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
-    {
+    ) -> Result<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>, crate::Error> {
         match self {
-            // 基础类型
-            Value::Bool(v) => query.bind(v),
-            Value::I16(v) => query.bind(v),
-            Value::I32(v) => query.bind(v),
-            Value::I64(v) => query.bind(v),
-            Value::F32(v) => query.bind(v),
-            Value::F64(v) => query.bind(v),
-            Value::String(v) => query.bind(v),
-            Value::Bytes(v) => query.bind(v),
-            // chrono 时间类型
-            Value::NaiveDate(v) => query.bind(v),
-            Value::NaiveTime(v) => query.bind(v),
-            Value::NaiveDateTime(v) => query.bind(v),
-            Value::DateTimeUtc(v) => query.bind(v),
-            Value::DateTimeFixed(v) => query.bind(v),
-            // 精确数值
-            Value::BigDecimal(v) => query.bind(v),
-            // UUID
-            Value::Uuid(v) => query.bind(v),
-            // JSON
-            Value::Json(v) => query.bind(v),
-            // None
-            Value::None => query,
-        }
-    }
-
-    /// 将 Value 绑定到 sqlx Query 查询（用于 DELETE/UPDATE 等不返回行的操作）
-    pub fn bind_to_query<'q>(
-        self,
-        query: sqlx::query::Query<
-            'q,
-            sqlx::Postgres,
-            <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-        >,
-    ) -> sqlx::query::Query<
-        'q,
-        sqlx::Postgres,
-        <sqlx::Postgres as sqlx::database::HasArguments<'q>>::Arguments,
-    > {
-        match self {
-            // 基础类型
-            Value::Bool(v) => query.bind(v),
-            Value::I16(v) => query.bind(v),
-            Value::I32(v) => query.bind(v),
-            Value::I64(v) => query.bind(v),
-            Value::F32(v) => query.bind(v),
-            Value::F64(v) => query.bind(v),
-            Value::String(v) => query.bind(v),
-            Value::Bytes(v) => query.bind(v),
-            // chrono 时间类型
-            Value::NaiveDate(v) => query.bind(v),
-            Value::NaiveTime(v) => query.bind(v),
-            Value::NaiveDateTime(v) => query.bind(v),
-            Value::DateTimeUtc(v) => query.bind(v),
-            Value::DateTimeFixed(v) => query.bind(v),
-            // 精确数值
-            Value::BigDecimal(v) => query.bind(v),
-            // UUID
-            Value::Uuid(v) => query.bind(v),
-            // JSON
-            Value::Json(v) => query.bind(v),
-            // None
-            Value::None => query,
+            Value::Bool(v) => Ok(Box::new(v)),
+            Value::I16(v) => Ok(Box::new(v)),
+            Value::I32(v) => Ok(Box::new(v)),
+            Value::I64(v) => Ok(Box::new(v)),
+            Value::F32(v) => Ok(Box::new(v)),
+            Value::F64(v) => Ok(Box::new(v)),
+            Value::String(v) => Ok(Box::new(v)),
+            Value::Bytes(v) => Ok(Box::new(v)),
+            // chrono 类型：启用 with-chrono-0_4 feature 后可直接使用
+            Value::NaiveDate(v) => Ok(Box::new(v)),
+            Value::NaiveTime(v) => Ok(Box::new(v)),
+            Value::NaiveDateTime(v) => Ok(Box::new(v)),
+            Value::DateTimeUtc(v) => Ok(Box::new(v)),
+            Value::DateTimeFixed(v) => Ok(Box::new(v)),
+            // BigDecimal：tokio-postgres 不支持 bigdecimal feature，转换为字符串
+            Value::BigDecimal(v) => Ok(Box::new(v.to_string())),
+            // UUID：启用 with-uuid-1 feature 后可直接使用
+            Value::Uuid(v) => Ok(Box::new(v)),
+            // JSON：启用 with-serde_json-1 feature 后可直接使用
+            Value::Json(v) => Ok(Box::new(v)),
+            Value::None => Ok(Box::new(Option::<String>::None)),
         }
     }
 }
@@ -222,7 +169,7 @@ impl IntoValue for chrono::DateTime<chrono::FixedOffset> {
 }
 
 // 精确数值
-impl IntoValue for sqlx::types::BigDecimal {
+impl IntoValue for bigdecimal::BigDecimal {
     fn into_value(self) -> Value {
         Value::BigDecimal(self)
     }
