@@ -107,19 +107,8 @@ impl<T: Domain> UpdateBuilder<T, true, true> {
     /// 执行 UPDATE 语句
     pub async fn execute<E: Executor>(self, executor: &E) -> Result<u64, crate::Error> {
         let sql_result = self.build();
-
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = sql_result
-            .values
-            .into_iter()
-            .map(|v: Value| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(sql_result.values)?;
+        let param_refs = prepared.as_params();
 
         // 执行查询
         executor.execute(&sql_result.sql, &param_refs).await

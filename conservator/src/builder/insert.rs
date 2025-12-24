@@ -60,18 +60,8 @@ impl<T: Domain, C: Creatable> InsertBuilder<T, C> {
         );
 
         let values = self.data.get_values();
-
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = values
-            .into_iter()
-            .map(|v| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(values)?;
+        let param_refs = prepared.as_params();
 
         executor
             .query_scalar::<T::PrimaryKey>(&sql, &param_refs)
@@ -94,18 +84,8 @@ impl<T: Domain, C: Creatable> InsertBuilder<T, C> {
         );
 
         let values = self.data.get_values();
-
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = values
-            .into_iter()
-            .map(|v| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(values)?;
+        let param_refs = prepared.as_params();
 
         // 执行查询
         let row = executor.query_one(&sql, &param_refs).await?;
@@ -167,17 +147,8 @@ impl<T: Domain, C: Creatable> InsertManyBuilder<T, C> {
             all_values.extend(item.get_batch_values(idx));
         }
 
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = all_values
-            .into_iter()
-            .map(|v| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(all_values)?;
+        let param_refs = prepared.as_params();
 
         // 执行查询
         let rows = executor.query(&sql, &param_refs).await?;
@@ -216,17 +187,8 @@ impl<T: Domain, C: Creatable> InsertManyBuilder<T, C> {
             all_values.extend(item.get_batch_values(idx));
         }
 
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = all_values
-            .into_iter()
-            .map(|v| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(all_values)?;
+        let param_refs = prepared.as_params();
 
         // 执行查询
         let rows = executor.query(&sql, &param_refs).await?;
@@ -261,17 +223,8 @@ impl<T: Domain, C: Creatable> InsertManyBuilder<T, C> {
             all_values.extend(item.get_batch_values(idx));
         }
 
-        // 将 Value 转换为 ToSql 参数
-        let params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>> = all_values
-            .into_iter()
-            .map(|v| v.to_tokio_sql_param())
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // 转换为引用数组
-        let param_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
-            .iter()
-            .map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync))
-            .collect();
+        let prepared = super::PreparedParams::new(all_values)?;
+        let param_refs = prepared.as_params();
 
         // 执行查询
         executor.execute(&sql, &param_refs).await

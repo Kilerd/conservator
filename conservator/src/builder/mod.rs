@@ -9,7 +9,39 @@ pub use select::SelectBuilder;
 pub use update::UpdateBuilder;
 
 use crate::expression::FieldInfo;
-use crate::Expression;
+use crate::{Error, Expression, Value};
+use tokio_postgres::types::ToSql;
+
+/// Helper struct to prepare query parameters for execution
+///
+/// This struct holds the boxed parameters and provides a method to
+/// create parameter references for use in database queries.
+pub(crate) struct PreparedParams {
+    params: Vec<Box<dyn ToSql + Sync + Send + 'static>>,
+}
+
+impl PreparedParams {
+    /// Create a new PreparedParams from a vector of Values
+    pub fn new(values: Vec<Value>) -> Result<Self, Error> {
+        let params: Vec<Box<dyn ToSql + Sync + Send + 'static>> = values
+            .into_iter()
+            .map(|v| v.to_tokio_sql_param())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self { params })
+    }
+
+    /// Get parameter references as a slice
+    ///
+    /// This creates a new Vec of references on each call, but the Vec
+    /// only lives within the calling scope.
+    pub fn as_params(&self) -> Vec<&(dyn ToSql + Sync)> {
+        self.params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn ToSql + Sync))
+            .collect()
+    }
+}
 
 /// 排序方向
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
