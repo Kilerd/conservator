@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
 use regex::Regex;
@@ -11,6 +12,13 @@ use syn::{
     AngleBracketedGenericArguments, Expr, ItemFn, Lit, PathArguments, ReturnType, Stmt, Type,
     parse2,
 };
+
+/// Static regex for matching SQL parameters (e.g., :param_name)
+/// This is compiled once at first use and cached for subsequent macro expansions
+static PARAM_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"[^:]:(\w+)")
+        .expect("BUG: invalid regex pattern in conservator_macro")
+});
 
 fn extract_inner_type<'a>(ty: &'a Type, wrapper: &'a str) -> Option<&'a Type> {
     if let Type::Path(syn::TypePath { qself: None, path }) = ty {
@@ -153,8 +161,7 @@ pub(crate) fn handler(
             Stmt::Expr(Expr::Lit(expr_lit)) => match &expr_lit.lit {
                 Lit::Str(lit_str) => {
                     let mut sql = lit_str.value();
-                    let re = Regex::new(r"[^:]:(\w+)").unwrap();
-                    let matched: HashSet<String> = re
+                    let matched: HashSet<String> = PARAM_REGEX
                         .captures_iter(&sql)
                         .map(|mat| mat[1].to_string())
                         .collect();

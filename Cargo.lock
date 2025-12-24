@@ -294,6 +294,7 @@ version = "0.2.0"
 dependencies = [
  "darling",
  "itertools",
+ "once_cell",
  "proc-macro-error",
  "proc-macro2",
  "quote",

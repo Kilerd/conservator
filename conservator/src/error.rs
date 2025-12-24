@@ -22,4 +22,8 @@ pub enum Error {
     /// URL 解析错误
     #[error("URL parse error: {0}")]
     UrlParse(String),
+
+    /// Query returned more than one row
+    #[error("Query returned {0} rows, expected one")]
+    TooManyRows(usize),
 }

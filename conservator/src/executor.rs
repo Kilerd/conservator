@@ -83,6 +83,35 @@ pub trait Executor: Send + Sync {
     ) -> Result<Option<Row>, Error>;
 }
 
+/// Helper function to handle optional query result
+///
+/// Returns:
+/// - `Ok(None)` if rows is empty
+/// - `Ok(Some(row))` if exactly one row
+/// - `Err` if multiple rows
+pub(crate) async fn handle_query_opt<C>(
+    _client: &C,
+    _query: &str,
+    _params: &[&(dyn ToSql + Sync)],
+    rows: Vec<Row>,
+) -> Result<Option<Row>, Error>
+where
+    C: tokio_postgres::GenericClient + Sync,
+{
+    match rows.len() {
+        0 => Ok(None),
+        1 => {
+            // SAFETY: we just checked rows.len() == 1
+            Ok(Some(
+                rows.into_iter()
+                    .next()
+                    .expect("BUG: vec has exactly one element but next() returned None"),
+            ))
+        }
+        count => Err(Error::TooManyRows(count)),
+    }
+}
+
 /// 为 `tokio_postgres::Client` 实现 `Executor` trait
 #[async_trait]
 impl Executor for tokio_postgres::Client {
@@ -128,15 +157,7 @@ impl Executor for tokio_postgres::Client {
         use tokio_postgres::GenericClient;
         let stmt = self.prepare(query).await?;
         let rows = GenericClient::query(self, &stmt, params).await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(rows.into_iter().next().unwrap())),
-            _ => {
-                // Return multiple rows error by calling query_one
-                self.query_one(query, params).await?;
-                unreachable!()
-            }
-        }
+        handle_query_opt(self, query, params, rows).await
     }
 }
 
@@ -220,15 +241,7 @@ impl<'a> Executor for tokio_postgres::Transaction<'a> {
         use tokio_postgres::GenericClient;
         let stmt = self.prepare(query).await?;
         let rows = GenericClient::query(self, &stmt, params).await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(rows.into_iter().next().unwrap())),
-            _ => {
-                // Return multiple rows error by calling query_one
-                Executor::query_one(self as &tokio_postgres::Transaction, query, params).await?;
-                unreachable!()
-            }
-        }
+        handle_query_opt(self as &tokio_postgres::Transaction, query, params, rows).await
     }
 }
 
@@ -283,14 +296,6 @@ impl Executor for deadpool_postgres::Client {
         let rows =
             <tokio_postgres::Client as tokio_postgres::GenericClient>::query(self, &stmt, params)
                 .await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(rows.into_iter().next().unwrap())),
-            _ => {
-                // Return multiple rows error by calling query_one
-                self.query_one(query, params).await?;
-                unreachable!()
-            }
-        }
+        handle_query_opt(self as &tokio_postgres::Client, query, params, rows).await
     }
 }

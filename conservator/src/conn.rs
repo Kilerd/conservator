@@ -269,14 +269,7 @@ impl Executor for Connection {
         let client: &tokio_postgres::Client = self.client.deref();
         let stmt = client.prepare(query).await?;
         let rows = GenericClient::query(client, &stmt, params).await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(rows.into_iter().next().unwrap())),
-            _ => {
-                self.query_one(query, params).await?;
-                unreachable!()
-            }
-        }
+        crate::executor::handle_query_opt(client, query, params, rows).await
     }
 }
 
@@ -331,14 +324,7 @@ impl<'a> Executor for Transaction<'a> {
         let tx: &tokio_postgres::Transaction<'_> = self.inner.deref();
         let stmt = tx.prepare(query).await?;
         let rows = GenericClient::query(tx, &stmt, params).await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(rows.into_iter().next().unwrap())),
-            _ => {
-                self.query_one(query, params).await?;
-                unreachable!()
-            }
-        }
+        crate::executor::handle_query_opt(tx, query, params, rows).await
     }
 }
 
