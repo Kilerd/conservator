@@ -211,6 +211,7 @@ mod test {
     #[test]
     fn test_sql_type_with_option() {
         // 验证 Option<T> 自动获得 SqlType
+        #[allow(dead_code)]
         struct User {
             amount: Option<rust_decimal::Decimal>,
         }

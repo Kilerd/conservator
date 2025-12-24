@@ -12,7 +12,7 @@ static CONTAINER: OnceLock<Container<'static, Postgres>> = OnceLock::new();
 static DB_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn get_container() -> &'static Container<'static, Postgres> {
-    let docker = DOCKER.get_or_init(|| Cli::default());
+    let docker = DOCKER.get_or_init(Cli::default);
     CONTAINER.get_or_init(|| docker.run(Postgres::default()))
 }
 

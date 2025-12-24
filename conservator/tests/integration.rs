@@ -1119,7 +1119,7 @@ async fn test_decimal_type() {
     let pk = CreateProduct {
         uuid: uuid::Uuid::new_v4(),
         name: "Expensive Item".into(),
-        price: price.clone(),
+        price,
         metadata: serde_json::json!({}),
         created_at: chrono::Utc::now(),
     }
