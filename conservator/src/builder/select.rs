@@ -354,7 +354,7 @@ mod tests {
 
         type PrimaryKey = i32;
 
-        async fn update<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
+        async fn save<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
             unimplemented!()
         }
     }

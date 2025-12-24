@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 ///
 /// # Example
 /// ```ignore
-/// let result = User::update_query()
+/// let result = User::update()
 ///     .set(User::COLUMNS.name, "new_name".to_string())
 ///     .set(User::COLUMNS.email, "new@email.com".to_string())
 ///     .filter(User::COLUMNS.id.eq(1))
@@ -158,7 +158,7 @@ mod tests {
         const TABLE_NAME: &'static str = "users";
         type PrimaryKey = i32;
 
-        async fn update<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
+        async fn save<E: crate::Executor>(&self, _executor: &E) -> Result<(), crate::Error> {
             unimplemented!()
         }
     }

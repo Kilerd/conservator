@@ -13,7 +13,7 @@ pub struct User {
 
 fn main() {
     // 只有 set，没有 filter，尝试调用 build() 应该编译失败
-    let _result = User::update_query()
+    let _result = User::update()
         .set(User::COLUMNS.name, "new_name".to_string())
         .build();
 }

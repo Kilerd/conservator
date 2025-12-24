@@ -1,4 +1,4 @@
-// 测试：Domain::update() 方法的 Active Record 风格更新
+// 测试：Domain::save() 方法的 Active Record 风格更新
 use conservator::Domain;
 
 #[derive(Debug, Domain)]
@@ -10,14 +10,14 @@ pub struct User {
     pub email: String,
 }
 
-// 验证 update 方法可以通过 &self 调用（编译时检查）
+// 验证 save 方法可以通过 &self 调用（编译时检查）
 #[allow(dead_code)]
-async fn test_update_signature(user: &User, pool: &conservator::PooledConnection) {
-    // 这行代码验证 update 方法使用 &self 调用
-    let _ = user.update(pool).await;
+async fn test_save_signature(user: &User, pool: &conservator::PooledConnection) {
+    // 这行代码验证 save 方法使用 &self 调用
+    let _ = user.save(pool).await;
 }
 
 fn main() {
-    println!("Entity update test passed!");
+    println!("Entity save test passed!");
 }
 

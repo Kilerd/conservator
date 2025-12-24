@@ -19,7 +19,7 @@ help: try using a conversion method
 error[E0599]: no method named `build` found for struct `UpdateBuilder<User, true>` in the current scope
   --> tests/fail/imcompatible_value_type.rs:18:10
    |
-16 |       let _result = User::update_query()
+16 |       let _result = User::update()
    |  ___________________-
 17 | |         .set(User::COLUMNS.name, 123)
 18 | |         .build();

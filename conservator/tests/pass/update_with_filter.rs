@@ -12,7 +12,7 @@ pub struct User {
 
 fn main() {
     // 单字段更新
-    let result = User::update_query()
+    let result = User::update()
         .set(User::COLUMNS.name, "new_name".to_string())
         .filter(User::COLUMNS.id.eq(1))
         .build();
@@ -21,7 +21,7 @@ fn main() {
     assert_eq!(result.values.len(), 2);
     
     // 多字段更新
-    let result2 = User::update_query()
+    let result2 = User::update()
         .set(User::COLUMNS.name, "new_name".to_string())
         .set(User::COLUMNS.email, "new@email.com".to_string())
         .filter(User::COLUMNS.id.eq(1))
@@ -34,7 +34,7 @@ fn main() {
     assert_eq!(result2.values.len(), 3);
     
     // 复杂条件
-    let result3 = User::update_query()
+    let result3 = User::update()
         .set(User::COLUMNS.name, "new_name".to_string())
         .filter(User::COLUMNS.id.eq(1) & User::COLUMNS.email.like("%@old.com"))
         .build();

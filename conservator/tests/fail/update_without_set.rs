@@ -13,7 +13,7 @@ pub struct User {
 
 fn main() {
     // 只有 filter，没有 set，尝试调用 build() 应该编译失败
-    let _result = User::update_query()
+    let _result = User::update()
         .filter(User::COLUMNS.id.eq(1))
         .build();
 }

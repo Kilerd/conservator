@@ -308,7 +308,7 @@ async fn test_entity_update() {
 
     user.name = "new".to_string();
     user.age = 21;
-    user.update(&pool).await.unwrap();
+    user.save(&pool).await.unwrap();
 
     let updated = User::fetch_one_by_pk(&user.id, &pool).await.unwrap();
     assert_eq!(updated.name, "new");
@@ -1280,7 +1280,7 @@ async fn test_update_single_field() {
     let pool = setup_test_db().await;
     let pks = insert_test_users(&pool).await;
 
-    let rows = User::update_query()
+    let rows = User::update()
         .set(User::COLUMNS.name, "Updated Alice".to_string())
         .filter(User::COLUMNS.id.eq(pks[0]))
         .execute(&pool)
@@ -1298,7 +1298,7 @@ async fn test_update_multiple_fields() {
     let pool = setup_test_db().await;
     let pks = insert_test_users(&pool).await;
 
-    let rows = User::update_query()
+    let rows = User::update()
         .set(User::COLUMNS.name, "New Name".to_string())
         .set(User::COLUMNS.email, "new@email.com".to_string())
         .set(User::COLUMNS.age, 99)
@@ -1320,7 +1320,7 @@ async fn test_update_multiple_rows() {
     let pool = setup_test_db().await;
     insert_test_users(&pool).await;
 
-    let rows = User::update_query()
+    let rows = User::update()
         .set(User::COLUMNS.is_active, false)
         .filter(User::COLUMNS.age.gt(28))
         .execute(&pool)
@@ -1472,7 +1472,7 @@ async fn test_transaction_multiple_operations() {
     let tx = conn.begin().await.unwrap();
 
     // Update in transaction
-    User::update_query()
+    User::update()
         .set(User::COLUMNS.name, "TxUpdated".to_string())
         .filter(User::COLUMNS.id.eq(pks[0]))
         .execute(&tx)
@@ -1596,7 +1596,7 @@ async fn test_transaction_auto_rollback_after_update() {
         let mut conn = pool.get().await.unwrap();
         let tx = conn.begin().await.unwrap();
 
-        User::update_query()
+        User::update()
             .set(User::COLUMNS.name, "ShouldNotPersist".to_string())
             .filter(User::COLUMNS.id.eq(pks[0]))
             .execute(&tx)
@@ -1733,8 +1733,7 @@ async fn test_bulk_insert_and_query() {
 // ==========================================
 // 日期时间类型操作符测试
 // ==========================================
-// TODO: 以下测试等待 tokio-postgres BigDecimal 支持后启用
-/*
+
 /// 插入带有不同时间戳的产品用于测试
 async fn insert_test_products_with_dates(pool: &PooledConnection) -> Vec<i32> {
     use chrono::{Duration, Utc};
@@ -1932,7 +1931,7 @@ async fn test_datetime_in_update() {
 
     // 更新 14 天前的产品名称 (确保只有 Product A)
     let cutoff = Utc::now() - Duration::days(14);
-    let rows = Product::update_query()
+    let rows = Product::update()
         .set(Product::COLUMNS.name, "Old Product".to_string())
         .filter(Product::COLUMNS.created_at.lt(cutoff))
         .execute(&pool)
@@ -1964,4 +1963,3 @@ async fn test_datetime_in_delete() {
     let remaining = Product::select().all(&pool).await.unwrap();
     assert_eq!(remaining.len(), 3);
 }
-*/

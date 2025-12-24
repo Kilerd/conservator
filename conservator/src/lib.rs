@@ -1,3 +1,6 @@
+// Allow using #[derive(Domain)] inside this crate
+extern crate self as conservator;
+
 use async_trait::async_trait;
 pub use conservator_macro::{sql, Creatable, Domain, Selectable};
 
@@ -7,6 +10,7 @@ mod error;
 mod executor;
 mod expression;
 mod field;
+mod migrate;
 mod value;
 
 pub use builder::{
@@ -20,12 +24,10 @@ pub use expression::{Expression, FieldInfo, Operator, SqlResult};
 pub use field::Field;
 pub use value::{IntoValue, SqlType, SqlTypeWrapper, Value};
 
-#[cfg(feature = "migrate")]
-pub use sqlx::migrate;
-#[cfg(feature = "migrate")]
-pub use sqlx::postgres::PgPoolOptions;
-#[cfg(feature = "migrate")]
-pub use sqlx::{Pool, Postgres};
+// Native migration support
+pub use migrate::{
+    AppliedInfo, AppliedMigration, MigrateError, MigrateReport, Migration, Migrator,
+};
 
 pub type SingleNumberRow = (i32,);
 
@@ -58,7 +60,7 @@ pub trait Domain: Selectable {
         DeleteBuilder::<Self>::new()
     }
 
-    fn update_query() -> UpdateBuilder<Self> {
+    fn update() -> UpdateBuilder<Self> {
         UpdateBuilder::<Self>::new()
     }
 
@@ -106,7 +108,7 @@ pub trait Domain: Selectable {
     /// 更新实体到数据库
     ///
     /// 此方法由 `#[derive(Domain)]` 宏生成具体实现
-    async fn update<E: Executor>(&self, executor: &E) -> Result<(), Error>;
+    async fn save<E: Executor>(&self, executor: &E) -> Result<(), Error>;
 }
 
 pub trait Creatable: Send + Sized {

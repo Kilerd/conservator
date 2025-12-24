@@ -155,7 +155,7 @@ let pks = User::insert_many(vec![
 
 ```rust
 // Type-safe update - must have both SET and FILTER
-let rows = User::update_query()
+let rows = User::update()
     .set(User::COLUMNS.name, "new_name".to_string())
     .set(User::COLUMNS.email, "new@email.com".to_string())
     .filter(User::COLUMNS.id.eq(1))

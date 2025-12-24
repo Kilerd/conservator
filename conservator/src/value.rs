@@ -125,7 +125,14 @@ impl Value {
         Value(Box::new(v))
     }
 
-    pub fn to_tokio_sql_param(self) -> Result<Box<dyn ToSql + Sync + Send + 'static>, crate::Error> {
+    /// 获取 ToSql 引用，用于 tokio-postgres 参数绑定
+    pub fn as_param(&self) -> &(dyn ToSql + Sync) {
+        self.0.as_ref()
+    }
+
+    pub fn to_tokio_sql_param(
+        self,
+    ) -> Result<Box<dyn ToSql + Sync + Send + 'static>, crate::Error> {
         Ok(self.0)
     }
 }
@@ -181,9 +188,14 @@ macro_rules! impl_sql_type {
 impl_sql_type!(
     String,
     bool,
-    i8, i16, i32, i64,
+    i8,
+    i16,
+    i32,
+    i64,
     u32,
-    f32, f64,
+    f32,
+    f64,
+    Vec<u8>, // PostgreSQL BYTEA
     Uuid,
     chrono::DateTime<chrono::Utc>,
     chrono::DateTime<chrono::Local>,

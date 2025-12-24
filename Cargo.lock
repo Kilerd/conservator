@@ -260,7 +260,7 @@ dependencies = [
  "deadpool-postgres",
  "rust_decimal",
  "serde_json",
- "sqlx",
+ "sha2",
  "testcontainers",
  "testcontainers-modules",
  "thiserror",

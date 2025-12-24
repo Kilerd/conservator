@@ -208,6 +208,19 @@ impl<'a> Transaction<'a> {
         self.inner.rollback().await.map_err(Error::from)
     }
 
+    /// 批量执行 SQL（用于迁移等场景）
+    ///
+    /// 一次执行多条 SQL 语句，语句之间用分号分隔。
+    /// 不支持参数化查询。
+    pub async fn batch_execute(&self, query: &str) -> Result<(), Error> {
+        use std::ops::Deref;
+        use tokio_postgres::GenericClient;
+        let tx: &tokio_postgres::Transaction<'_> = self.inner.deref();
+        GenericClient::batch_execute(tx, query)
+            .await
+            .map_err(Error::from)
+    }
+
     /// 获取底层事务引用
     pub fn inner(&self) -> &deadpool_postgres::Transaction<'a> {
         &self.inner

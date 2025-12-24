@@ -159,7 +159,7 @@ pub(crate) fn handler(
 
         type PrimaryKey = #pk_field_type;
 
-        async fn update<E: ::conservator::Executor>(
+        async fn save<E: ::conservator::Executor>(
             &self,
             executor: &E,
         ) -> Result<(), ::conservator::Error> {
