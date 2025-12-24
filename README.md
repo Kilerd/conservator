@@ -317,20 +317,34 @@ impl UserService {
 
 **Note:** Use named parameters `:email` instead of `$1`. This allows the SQL to be used directly in database tools.
 
-## Migration (Optional)
+## Native Migration System
 
-Enable the `migrate` feature to use sqlx migrations:
-
-```toml
-[dependencies]
-conservator = { version = "0.2", features = ["migrate"] }
-```
+Conservator includes a native migration system for database schema versioning:
 
 ```rust
-use conservator::migrate;
+use conservator::{Migration, Migrator};
+
+// Define migrations
+let migrations = vec![
+    Migration::new(1, "create_users", "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)"),
+    Migration::new(2, "add_email", "ALTER TABLE users ADD COLUMN email TEXT"),
+];
+
+// Create migrator
+let migrator = Migrator::new(migrations);
 
 // Run migrations
-migrate!("./migrations").run(&pool).await?;
+let report = migrator.run(&pool).await?;
+println!("Applied {} migrations", report.applied.len());
+```
+
+Or load from directory:
+
+```rust
+use conservator::Migrator;
+
+let migrator = Migrator::from_path("./migrations")?;
+migrator.run(&pool).await?;
 ```
 
 ## License

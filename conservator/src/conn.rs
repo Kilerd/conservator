@@ -267,6 +267,26 @@ impl Executor for Connection {
         let row = self.query_one(query, params).await?;
         row.try_get(0).map_err(Error::from)
     }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        use std::ops::Deref;
+        use tokio_postgres::GenericClient;
+        let client: &tokio_postgres::Client = self.client.deref();
+        let stmt = client.prepare(query).await?;
+        let rows = GenericClient::query(client, &stmt, params).await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(rows.into_iter().next().unwrap())),
+            _ => {
+                self.query_one(query, params).await?;
+                unreachable!()
+            }
+        }
+    }
 }
 
 /// 为 `Transaction` 实现 `Executor` trait
@@ -309,6 +329,26 @@ impl<'a> Executor for Transaction<'a> {
         let row = self.query_one(query, params).await?;
         row.try_get(0).map_err(Error::from)
     }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        use std::ops::Deref;
+        use tokio_postgres::GenericClient;
+        let tx: &tokio_postgres::Transaction<'_> = self.inner.deref();
+        let stmt = tx.prepare(query).await?;
+        let rows = GenericClient::query(tx, &stmt, params).await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(rows.into_iter().next().unwrap())),
+            _ => {
+                self.query_one(query, params).await?;
+                unreachable!()
+            }
+        }
+    }
 }
 
 /// 为 `PooledConnection` 实现 `Executor` trait
@@ -338,6 +378,15 @@ impl Executor for PooledConnection {
         let conn = self.get().await?;
         Executor::query_scalar(&conn, query, params).await
     }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        let conn = self.get().await?;
+        Executor::query_opt(&conn, query, params).await
+    }
 }
 
 /// 为 `&PooledConnection` 实现 `Executor` trait
@@ -360,6 +409,14 @@ impl Executor for &PooledConnection {
         T: for<'r> FromSql<'r>,
     {
         (*self).query_scalar(query, params).await
+    }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        (*self).query_opt(query, params).await
     }
 }
 
@@ -384,6 +441,14 @@ impl Executor for &Connection {
     {
         (*self).query_scalar(query, params).await
     }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        (*self).query_opt(query, params).await
+    }
 }
 
 /// 为 `&Transaction` 实现 `Executor` trait
@@ -406,5 +471,13 @@ impl<'a> Executor for &Transaction<'a> {
         T: for<'r> FromSql<'r>,
     {
         (*self).query_scalar(query, params).await
+    }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        (*self).query_opt(query, params).await
     }
 }

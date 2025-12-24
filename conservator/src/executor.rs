@@ -65,6 +65,22 @@ pub trait Executor: Send + Sync {
     ) -> Result<T, Error>
     where
         T: for<'r> FromSql<'r>;
+
+    /// 执行一个返回可选行的 SQL 查询
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - SQL 查询字符串
+    /// * `params` - 查询参数
+    ///
+    /// # Returns
+    ///
+    /// 返回 Some(Row) 如果查询返回一行，None 如果没有行，如果返回多行则返回错误
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error>;
 }
 
 /// 为 `tokio_postgres::Client` 实现 `Executor` trait
@@ -103,6 +119,25 @@ impl Executor for tokio_postgres::Client {
         let row = GenericClient::query_one(self, &stmt, params).await?;
         row.try_get(0).map_err(Error::from)
     }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        use tokio_postgres::GenericClient;
+        let stmt = self.prepare(query).await?;
+        let rows = GenericClient::query(self, &stmt, params).await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(rows.into_iter().next().unwrap())),
+            _ => {
+                // Return multiple rows error by calling query_one
+                self.query_one(query, params).await?;
+                unreachable!()
+            }
+        }
+    }
 }
 
 /// 为 `deadpool_postgres::Transaction` 实现 `Executor` trait
@@ -129,6 +164,14 @@ impl<'a> Executor for deadpool_postgres::Transaction<'a> {
         T: for<'r> FromSql<'r>,
     {
         Executor::query_scalar(self as &tokio_postgres::Transaction, query, params).await
+    }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        Executor::query_opt(self as &tokio_postgres::Transaction, query, params).await
     }
 }
 
@@ -167,6 +210,25 @@ impl<'a> Executor for tokio_postgres::Transaction<'a> {
         let stmt = self.prepare(query).await?;
         let row = GenericClient::query_one(self, &stmt, params).await?;
         row.try_get(0).map_err(Error::from)
+    }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        use tokio_postgres::GenericClient;
+        let stmt = self.prepare(query).await?;
+        let rows = GenericClient::query(self, &stmt, params).await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(rows.into_iter().next().unwrap())),
+            _ => {
+                // Return multiple rows error by calling query_one
+                Executor::query_one(self as &tokio_postgres::Transaction, query, params).await?;
+                unreachable!()
+            }
+        }
     }
 }
 
@@ -210,5 +272,25 @@ impl Executor for deadpool_postgres::Client {
         )
         .await?;
         row.try_get(0).map_err(Error::from)
+    }
+
+    async fn query_opt(
+        &self,
+        query: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        let stmt = self.prepare(query).await?;
+        let rows =
+            <tokio_postgres::Client as tokio_postgres::GenericClient>::query(self, &stmt, params)
+                .await?;
+        match rows.len() {
+            0 => Ok(None),
+            1 => Ok(Some(rows.into_iter().next().unwrap())),
+            _ => {
+                // Return multiple rows error by calling query_one
+                self.query_one(query, params).await?;
+                unreachable!()
+            }
+        }
     }
 }

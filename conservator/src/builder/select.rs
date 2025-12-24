@@ -305,16 +305,10 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             .collect();
 
         // 执行查询（使用 query，如果没有行则返回 None）
-        let rows = executor.query(&sql_result.sql, &param_refs).await?;
-        match rows.len() {
-            0 => Ok(None),
-            1 => Ok(Some(Returning::from_row(&rows[0])?)),
-            _ => {
-                // 如果返回多行，这是一个错误（optional 应该只返回 0 或 1 行）
-                // 使用 query_one 来获取正确的错误类型
-                executor.query_one(&sql_result.sql, &param_refs).await?;
-                unreachable!()
-            }
+        let rows = executor.query_opt(&sql_result.sql, &param_refs).await?;
+        match rows {
+            Some(row) => Ok(Some(Returning::from_row(&row)?)),
+            None => Ok(None),
         }
     }
 }

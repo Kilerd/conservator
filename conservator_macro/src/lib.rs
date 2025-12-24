@@ -18,7 +18,7 @@ pub fn derive_domain_fn(input: TokenStream) -> TokenStream {
 
 /// 派生 Selectable trait
 ///
-/// 自动生成 `Selectable` 和 `sqlx::FromRow` 的实现。
+/// 自动生成 `Selectable` 和 `tokio_postgres::Row` 的实现。
 /// 用于定义可以作为 `SelectBuilder.returning::<T>()` 目标的投影类型。
 ///
 /// # Example

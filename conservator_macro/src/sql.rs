@@ -41,7 +41,7 @@ enum Action {
 }
 
 impl Action {
-    fn build_sqlx_query(
+    fn build_conservator_query(
         &self,
         fields: &[String],
         fetch_model: &proc_macro2::TokenStream,
@@ -52,88 +52,43 @@ impl Action {
             .filter(|&field| !field.eq("executor"))
             .map(|field| format_ident!("{}", field))
             .collect_vec();
+
         match self {
             Action::Fetch => {
-                if cfg!(debug_assertions) {
-                    quote! {
-                        ::sqlx::query_as!(#fetch_model, #sql, #(#fields,)*)
-                            .fetch_one(executor)
-                            .await
-                    }
-                } else {
-                    quote! {
-                        ::sqlx::query_as(#sql)
-                        #(.bind(#fields))*
-                        .fetch_one(executor)
-                        .await
-                    }
+                quote! {
+                    let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![#(&#fields,)*];
+                    let row = executor.query_one(#sql, &params).await?;
+                    #fetch_model::from_row(&row)
                 }
             }
             Action::Exists => {
                 let exist_wrapper_sql = format!("select exists({})", sql);
-                if cfg!(debug_assertions) {
-                    quote! {
-                        Ok(::sqlx::query_as!(#fetch_model, #exist_wrapper_sql, #(#fields,)*)
-                            .fetch_one(executor)
-                            .await?.exists.unwrap_or(false))
-                    }
-                } else {
-                    quote! {
-                        Ok(::sqlx::query_as::<_, #fetch_model>(#exist_wrapper_sql)
-                        #(.bind(#fields))*
-                        .fetch_one(executor)
-                        .await?.exists.unwrap_or(false))
-                    }
+                quote! {
+                    let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![#(&#fields,)*];
+                    executor.query_scalar(#exist_wrapper_sql, &params).await
                 }
             }
             Action::Find => {
-                if cfg!(debug_assertions) {
-                    quote! {
-                        ::sqlx::query_as!(#fetch_model, #sql, #(#fields,)*)
-                            .fetch_optional(executor)
-                            .await
-                    }
-                } else {
-                    quote! {
-                        ::sqlx::query_as(#sql)
-                        #(.bind(#fields))*
-                        .fetch_optional(executor)
-                        .await
+                quote! {
+                    let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![#(&#fields,)*];
+                    match executor.query_opt(#sql, &params).await? {
+                        Some(row) => Ok(Some(#fetch_model::from_row(&row)?)),
+                        None => Ok(None),
                     }
                 }
             }
             Action::FetchAll => {
-                if cfg!(debug_assertions) {
-                    quote! {
-                        ::sqlx::query_as!(#fetch_model, #sql, #(#fields,)*)
-                            .fetch_all(executor)
-                            .await
-                    }
-                } else {
-                    quote! {
-                        ::sqlx::query_as(#sql)
-                        #(.bind(#fields))*
-                        .fetch_all(executor)
-                        .await
-                    }
+                quote! {
+                    let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![#(&#fields,)*];
+                    let rows = executor.query(#sql, &params).await?;
+                    rows.iter().map(|row| #fetch_model::from_row(row)).collect()
                 }
             }
             Action::Execute => {
-                if cfg!(debug_assertions) {
-                    quote! {
-                        ::sqlx::query_as!(#fetch_model, #sql, #(#fields,)*)
-                            .execute(executor)
-                            .await?;
-                        Ok(())
-                    }
-                } else {
-                    quote! {
-                        ::sqlx::query(#sql)
-                        #(.bind(#fields))*
-                        .execute(executor)
-                        .await?;
-                        Ok(())
-                    }
+                quote! {
+                    let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![#(&#fields,)*];
+                    executor.execute(#sql, &params).await?;
+                    Ok(())
                 }
             }
         }
@@ -148,7 +103,7 @@ impl Action {
             ReturnType::Default => Err((span, "default return type does not support")),
             ReturnType::Type(_, inner) => match self {
                 Action::Fetch => Ok((quote! {#inner}, quote! { #inner })),
-                Action::Exists => Ok((quote! {::conservator::ExistsRow}, quote! { bool })),
+                Action::Exists => Ok((quote! {bool}, quote! { bool })),
                 Action::Find => {
                     let Some(inner_type) = extract_inner_type(inner, "Option") else {
                         return Err((span, "find method need a option type"));
@@ -161,7 +116,7 @@ impl Action {
                     };
                     Ok((quote! {#inner_type}, quote! { #inner }))
                 }
-                Action::Execute => Ok((quote! { ::conservator::SingleNumberRow }, quote! { () })),
+                Action::Execute => Ok((quote! {()}, quote! { () })),
             },
         }
     }
@@ -194,7 +149,6 @@ pub(crate) fn handler(
     let body: Vec<proc_macro2::TokenStream> = body
         .stmts
         .iter()
-        .cloned()
         .map(|stmt| match &stmt {
             Stmt::Expr(Expr::Lit(expr_lit)) => match &expr_lit.lit {
                 Lit::Str(lit_str) => {
@@ -210,7 +164,7 @@ pub(crate) fn handler(
                         sql = sql.replace(&format!(":{}", field), &format!("${}", idx + 1));
                     });
                     let query_stmt =
-                        action.build_sqlx_query(&matched_fields[..], &fetch_model, sql);
+                        action.build_conservator_query(&matched_fields[..], &fetch_model, sql);
                     quote!( #query_stmt)
                 }
                 _ => {
@@ -229,7 +183,7 @@ pub(crate) fn handler(
         quote! { #inputs,}
     };
     let ret = quote! {
-        #vis async fn #ident<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database=::sqlx::Postgres>>(#inputs executor: E) -> Result<#return_type, ::sqlx::Error> {
+        #vis async fn #ident<E: ::conservator::Executor>(#inputs executor: &E) -> Result<#return_type, ::conservator::Error> {
             #(#body )*
         }
     };
@@ -251,13 +205,15 @@ mod test {
         };
 
         let expected = quote! {
-            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+            pub async fn find_user<E: ::conservator::Executor>(
                 email: &str,
-                executor: E
-            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", email,)
-                    .fetch_optional(executor)
-                    .await
+                executor: &E
+            ) -> Result<Option<UserEntity>, ::conservator::Error> {
+                let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![&email,];
+                match executor.query_opt("select * from users where email = $1", &params).await? {
+                    Some(row) => Ok(Some(UserEntity::from_row(&row)?)),
+                    None => Ok(None),
+                }
             }
         };
         assert_eq!(
@@ -278,14 +234,16 @@ mod test {
         };
 
         let expected = quote! {
-            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+            pub async fn find_user<E: ::conservator::Executor>(
                 &self,
-                executor: E
-            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                 let id = self.id;
-                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
-                    .fetch_optional(executor)
-                    .await
+                executor: &E
+            ) -> Result<Option<UserEntity>, ::conservator::Error> {
+                let id = self.id;
+                let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![&id,];
+                match executor.query_opt("select * from users where email = $1", &params).await? {
+                    Some(row) => Ok(Some(UserEntity::from_row(&row)?)),
+                    None => Ok(None),
+                }
             }
         };
         assert_eq!(
@@ -305,13 +263,15 @@ mod test {
         };
 
         let expected = quote! {
-            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+            pub async fn find_user<E: ::conservator::Executor>(
                 id: i32,
-                executor: E
-            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
-                    .fetch_optional(executor)
-                    .await
+                executor: &E
+            ) -> Result<Option<UserEntity>, ::conservator::Error> {
+                let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![&id,];
+                match executor.query_opt("select * from users where email = $1", &params).await? {
+                    Some(row) => Ok(Some(UserEntity::from_row(&row)?)),
+                    None => Ok(None),
+                }
             }
         };
         assert_eq!(
@@ -331,13 +291,15 @@ mod test {
         };
 
         let expected = quote! {
-            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
+            pub async fn find_user<E: ::conservator::Executor>(
                 id: i32,
-                executor: E
-            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                ::sqlx::query_as!(UserEntity, "select * from users where email = $1", id,)
-                    .fetch_optional(executor)
-                    .await
+                executor: &E
+            ) -> Result<Option<UserEntity>, ::conservator::Error> {
+                let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![&id,];
+                match executor.query_opt("select * from users where email = $1", &params).await? {
+                    Some(row) => Ok(Some(UserEntity::from_row(&row)?)),
+                    None => Ok(None),
+                }
             }
         };
         assert_eq!(
@@ -357,13 +319,14 @@ mod test {
         };
 
         let expected = quote! {
-            pub async fn find_user<'e, 'c: 'e, E: 'e + ::sqlx::Executor<'c, Database = ::sqlx::Postgres>>(
-
-                executor: E
-            ) -> Result<Option<UserEntity>, ::sqlx::Error> {
-                ::sqlx::query_as!(UserEntity, "select * from users where datetime + '14 days'::interval > now()",)
-                    .fetch_optional(executor)
-                    .await
+            pub async fn find_user<E: ::conservator::Executor>(
+                executor: &E
+            ) -> Result<Option<UserEntity>, ::conservator::Error> {
+                let params: Vec<&(dyn ::tokio_postgres::types::ToSql + Sync)> = vec![];
+                match executor.query_opt("select * from users where datetime + '14 days'::interval > now()", &params).await? {
+                    Some(row) => Ok(Some(UserEntity::from_row(&row)?)),
+                    None => Ok(None),
+                }
             }
         };
         assert_eq!(
