@@ -17,7 +17,7 @@ use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
 ///     .limit(10)
 ///     .build();
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain> {
     filter_expr: Option<Expression>,
     order_by: Vec<OrderedField>,
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_select_with_filter() {
-        let expr = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let expr = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let result = SelectBuilder::<TestUser>::new().filter(expr).build();
         assert_eq!(
             result.sql,
@@ -423,7 +423,7 @@ mod tests {
     fn test_complex_select() {
         use crate::builder::{Order, OrderedField};
 
-        let expr = Expression::comparison(id_field(), Operator::Gt, Value::I32(10));
+        let expr = Expression::comparison(id_field(), Operator::Gt, Value::new(10));
         let result = SelectBuilder::<TestUser>::new()
             .filter(expr)
             .order_by(OrderedField::new(name_field(), Order::Desc))

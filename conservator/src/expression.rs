@@ -85,7 +85,7 @@ impl Operator {
 /// SQL 表达式
 ///
 /// 包含 SQL 片段和绑定的参数值
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expression {
     /// 比较表达式: field op value
     Comparison {
@@ -103,7 +103,7 @@ pub enum Expression {
 }
 
 /// 表达式生成的 SQL 结果
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SqlResult {
     /// SQL 字符串（带 $1, $2 等占位符）
     pub sql: String,
@@ -327,14 +327,11 @@ mod tests {
 
     #[test]
     fn test_simple_comparison() {
-        let expr = Expression::comparison(id_field(), Operator::Eq, Value::I32(42));
+        let expr = Expression::comparison(id_field(), Operator::Eq, Value::new(42));
         let result = expr.build();
         assert_eq!(result.sql, "\"id\" = $1");
         assert_eq!(result.values.len(), 1);
-        match &result.values[0] {
-            Value::I32(v) => assert_eq!(*v, 42),
-            _ => panic!("Expected I32"),
-        }
+        assert!(format!("{:?}", result.values[0]).contains("42"));
     }
 
     #[test]
@@ -342,14 +339,12 @@ mod tests {
         let expr = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         let result = expr.build();
         assert_eq!(result.sql, "\"name\" LIKE $1");
-        match &result.values[0] {
-            Value::String(v) => assert_eq!(v, "John%"),
-            _ => panic!("Expected String"),
-        }
+        assert_eq!(result.values.len(), 1);
+        assert!(format!("{:?}", result.values[0]).contains("John%"));
     }
 
     #[test]
@@ -366,7 +361,7 @@ mod tests {
         let expr = Expression::comparison_multi(
             age_field,
             Operator::Between,
-            vec![Value::I32(18), Value::I32(65)],
+            vec![Value::new(18), Value::new(65)],
         );
         let result = expr.build();
         assert_eq!(result.sql, "\"age\" BETWEEN $1 AND $2");
@@ -379,7 +374,7 @@ mod tests {
         let expr = Expression::comparison_multi(
             status_field,
             Operator::In,
-            vec![Value::I32(1), Value::I32(2), Value::I32(3)],
+            vec![Value::new(1), Value::new(2), Value::new(3)],
         );
         let result = expr.build();
         assert_eq!(result.sql, "\"status\" IN ($1, $2, $3)");
@@ -388,11 +383,11 @@ mod tests {
 
     #[test]
     fn test_and_expression() {
-        let left = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let left = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let right = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         let expr = left.and(right);
         let result = expr.build();
@@ -402,11 +397,11 @@ mod tests {
 
     #[test]
     fn test_complex_expression() {
-        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let name_like = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         let email_null = Expression::comparison_no_value(email_field(), Operator::IsNull);
 
@@ -421,18 +416,18 @@ mod tests {
 
     #[test]
     fn test_build_qualified() {
-        let expr = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let expr = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let result = expr.build_qualified();
         assert_eq!(result.sql, "users.\"id\" = $1");
     }
 
     #[test]
     fn test_get_fields() {
-        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let name_like = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         let expr = id_eq.and(name_like);
         let fields = expr.fields();
@@ -443,11 +438,11 @@ mod tests {
 
     #[test]
     fn test_bitand_operator() {
-        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let name_like = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         // 使用 & 运算符
         let expr = id_eq & name_like;
@@ -457,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_bitor_operator() {
-        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let email_null = Expression::comparison_no_value(email_field(), Operator::IsNull);
         // 使用 | 运算符
         let expr = id_eq | email_null;
@@ -467,11 +462,11 @@ mod tests {
 
     #[test]
     fn test_combined_operators() {
-        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::I32(1));
+        let id_eq = Expression::comparison(id_field(), Operator::Eq, Value::new(1));
         let name_like = Expression::comparison(
             name_field(),
             Operator::Like,
-            Value::String("John%".to_string()),
+            Value::new("John%".to_string()),
         );
         let email_null = Expression::comparison_no_value(email_field(), Operator::IsNull);
         // 使用 & 和 | 运算符组合

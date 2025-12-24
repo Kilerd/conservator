@@ -11,7 +11,10 @@ mod sql;
 pub fn derive_domain_fn(input: TokenStream) -> TokenStream {
     let stream2 = proc_macro2::TokenStream::from(input);
     match domain::handler(stream2) {
-        Ok(stream) => proc_macro::TokenStream::from(stream),
+        Ok(stream) => {
+            let stream = proc_macro::TokenStream::from(stream);
+            stream
+        }
         Err((span, msg)) => abort! {span, msg},
     }
 }

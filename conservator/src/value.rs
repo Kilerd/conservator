@@ -1,200 +1,219 @@
 //! SQL 参数值类型
 //!
-//! 提供 `Value` 枚举和 `IntoValue` trait，用于类型安全地将 Rust 值绑定到 SQL 查询参数。
+//! 提供类型擦除的 `Value` 和 `IntoValue` trait，支持任意实现 `ToSql` 的类型。
 
-/// 存储 SQL 参数值的枚举
+use std::error::Error;
+use std::fmt::Debug;
+use tokio_postgres::types::{private::BytesMut, to_sql_checked, FromSql, IsNull, ToSql, Type};
+use uuid::Uuid;
+
+// ============================================================================
+// SqlType trait - 用于自定义类型扩展
+// ============================================================================
+
+/// 自定义 SQL 类型 trait
 ///
-/// 支持常见的数据库类型，包括 PostgreSQL 特有类型
-#[derive(Debug, Clone)]
-pub enum Value {
-    // 基础类型
-    Bool(bool),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-    String(String),
-    Bytes(Vec<u8>),
+/// 实现此 trait 来支持自定义 PostgreSQL 类型。
+/// 使用 `SqlTypeWrapper<T>` 包装器来获得 `ToSql` 和 `FromSql` 实现。
+pub trait SqlType: Sized + Send + Sync + Debug {
+    /// 将值序列化为 SQL 参数
+    fn to_sql_value(
+        &self,
+        ty: &Type,
+        out: &mut BytesMut,
+    ) -> Result<IsNull, Box<dyn Error + Sync + Send>>;
 
-    // chrono 时间类型
-    NaiveDate(chrono::NaiveDate),
-    NaiveTime(chrono::NaiveTime),
-    NaiveDateTime(chrono::NaiveDateTime),
-    DateTimeUtc(chrono::DateTime<chrono::Utc>),
-    DateTimeFixed(chrono::DateTime<chrono::FixedOffset>),
+    /// 从数据库结果解析值
+    fn from_sql_value(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn Error + Sync + Send>>;
 
-    // 精确数值
-    BigDecimal(bigdecimal::BigDecimal),
+    /// 从 NULL 值解析（默认返回错误，Option 类型重写此方法）
+    fn from_sql_null_value(_ty: &Type) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Err("unexpected NULL value".into())
+    }
 
-    // UUID
-    Uuid(uuid::Uuid),
-
-    // JSON
-    Json(serde_json::Value),
-
-    /// 用于扩展其他类型
-    None,
+    /// 检查是否接受此 PostgreSQL 类型
+    fn accepts(ty: &Type) -> bool;
 }
 
-impl Value {
-    /// 将 Value 转换为 tokio-postgres 的 ToSql 参数
-    ///
-    /// 注意：tokio-postgres 需要启用相应的 feature flags 才能支持某些类型
-    /// 返回一个拥有所有权的类型，可以转换为 ToSql
-    pub fn to_tokio_sql_param(
-        self,
-    ) -> Result<Box<dyn tokio_postgres::types::ToSql + Sync + Send + 'static>, crate::Error> {
-        match self {
-            Value::Bool(v) => Ok(Box::new(v)),
-            Value::I16(v) => Ok(Box::new(v)),
-            Value::I32(v) => Ok(Box::new(v)),
-            Value::I64(v) => Ok(Box::new(v)),
-            Value::F32(v) => Ok(Box::new(v)),
-            Value::F64(v) => Ok(Box::new(v)),
-            Value::String(v) => Ok(Box::new(v)),
-            Value::Bytes(v) => Ok(Box::new(v)),
-            // chrono 类型：启用 with-chrono-0_4 feature 后可直接使用
-            Value::NaiveDate(v) => Ok(Box::new(v)),
-            Value::NaiveTime(v) => Ok(Box::new(v)),
-            Value::NaiveDateTime(v) => Ok(Box::new(v)),
-            Value::DateTimeUtc(v) => Ok(Box::new(v)),
-            Value::DateTimeFixed(v) => Ok(Box::new(v)),
-            // BigDecimal：tokio-postgres 不支持 bigdecimal feature，转换为字符串
-            Value::BigDecimal(v) => Ok(Box::new(v.to_string())),
-            // UUID：启用 with-uuid-1 feature 后可直接使用
-            Value::Uuid(v) => Ok(Box::new(v)),
-            // JSON：启用 with-serde_json-1 feature 后可直接使用
-            Value::Json(v) => Ok(Box::new(v)),
-            Value::None => Ok(Box::new(Option::<String>::None)),
-        }
+// ============================================================================
+// SqlTypeWrapper - 桥接 SqlType 到 ToSql/FromSql
+// ============================================================================
+
+/// SQL 类型包装器，将 `SqlType` 转换为 `ToSql`/`FromSql`
+#[derive(Debug, Clone)]
+pub struct SqlTypeWrapper<T>(pub T);
+
+impl<T> SqlTypeWrapper<T> {
+    pub fn new(value: T) -> Self {
+        SqlTypeWrapper(value)
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
     }
 }
+
+impl<T: SqlType> ToSql for SqlTypeWrapper<T> {
+    fn to_sql(
+        &self,
+        ty: &Type,
+        out: &mut BytesMut,
+    ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
+        self.0.to_sql_value(ty, out)
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        T::accepts(ty)
+    }
+
+    to_sql_checked!();
+}
+
+impl<'a, T: SqlType> FromSql<'a> for SqlTypeWrapper<T> {
+    fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Ok(SqlTypeWrapper(T::from_sql_value(ty, raw)?))
+    }
+
+    fn from_sql_null(ty: &Type) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Ok(SqlTypeWrapper(T::from_sql_null_value(ty)?))
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        T::accepts(ty)
+    }
+}
+
+// ============================================================================
+// 泛型实现 - Option<T> 和 IntoValue
+// ============================================================================
+
+/// 泛型实现：所有 `Option<T: SqlType>` 自动获得 `SqlType`
+impl<T: SqlType> SqlType for Option<T> {
+    fn to_sql_value(
+        &self,
+        ty: &Type,
+        out: &mut BytesMut,
+    ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
+        match self {
+            Some(value) => value.to_sql_value(ty, out),
+            None => Ok(IsNull::Yes),
+        }
+    }
+
+    fn from_sql_value(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Ok(Some(T::from_sql_value(ty, raw)?))
+    }
+
+    fn from_sql_null_value(_ty: &Type) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Ok(None)
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        T::accepts(ty)
+    }
+}
+
+// ============================================================================
+// Value - 类型擦除的 SQL 参数
+// ============================================================================
+
+/// 类型擦除的 SQL 参数值
+pub struct Value(Box<dyn ToSql + Send + Sync>);
+
+impl Value {
+    pub fn new<T: ToSql + Send + Sync + 'static>(v: T) -> Self {
+        Value(Box::new(v))
+    }
+
+    pub fn to_tokio_sql_param(self) -> Result<Box<dyn ToSql + Sync + Send + 'static>, crate::Error> {
+        Ok(self.0)
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value({:?})", self.0)
+    }
+}
+
+// ============================================================================
+// IntoValue trait - 泛型实现
+// ============================================================================
 
 /// 将 Rust 类型转换为 Value 的 trait
 pub trait IntoValue {
     fn into_value(self) -> Value;
 }
 
-// 基础类型实现
-impl IntoValue for bool {
+/// 泛型实现：所有 `SqlType` 自动获得 `IntoValue`
+impl<T: SqlType + 'static> IntoValue for T {
     fn into_value(self) -> Value {
-        Value::Bool(self)
+        Value::new(SqlTypeWrapper(self))
     }
 }
 
-impl IntoValue for i16 {
-    fn into_value(self) -> Value {
-        Value::I16(self)
-    }
+// ============================================================================
+// 基础类型的 SqlType 实现（简化版宏）
+// ============================================================================
+
+/// 为已有 ToSql/FromSql 的类型实现 SqlType（只需一行）
+macro_rules! impl_sql_type {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl SqlType for $ty {
+                fn to_sql_value(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
+                    ToSql::to_sql(self, ty, out)
+                }
+
+                fn from_sql_value(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
+                    FromSql::from_sql(ty, raw)
+                }
+
+                fn accepts(ty: &Type) -> bool {
+                    <Self as ToSql>::accepts(ty)
+                }
+            }
+        )+
+    };
 }
 
-impl IntoValue for i32 {
-    fn into_value(self) -> Value {
-        Value::I32(self)
-    }
-}
+// 一次性声明所有基础类型
+impl_sql_type!(
+    String,
+    bool,
+    i8, i16, i32, i64,
+    u32,
+    f32, f64,
+    Uuid,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Local>,
+    chrono::DateTime<chrono::FixedOffset>,
+    serde_json::Value,
+    rust_decimal::Decimal,
+);
 
-impl IntoValue for i64 {
-    fn into_value(self) -> Value {
-        Value::I64(self)
-    }
-}
+#[cfg(test)]
+mod test {
+    use crate::{Selectable, SqlTypeWrapper};
 
-impl IntoValue for f32 {
-    fn into_value(self) -> Value {
-        Value::F32(self)
-    }
-}
+    #[test]
+    fn test_sql_type_with_option() {
+        // 验证 Option<T> 自动获得 SqlType
+        struct User {
+            amount: Option<rust_decimal::Decimal>,
+        }
 
-impl IntoValue for f64 {
-    fn into_value(self) -> Value {
-        Value::F64(self)
-    }
-}
+        impl Selectable for User {
+            const COLUMN_NAMES: &'static [&'static str] = &["amount"];
 
-impl IntoValue for String {
-    fn into_value(self) -> Value {
-        Value::String(self)
-    }
-}
-
-impl IntoValue for &str {
-    fn into_value(self) -> Value {
-        Value::String(self.to_string())
-    }
-}
-
-impl IntoValue for Vec<u8> {
-    fn into_value(self) -> Value {
-        Value::Bytes(self)
-    }
-}
-
-impl<T: IntoValue + Clone> IntoValue for &T {
-    fn into_value(self) -> Value {
-        self.clone().into_value()
-    }
-}
-
-// chrono 时间类型
-impl IntoValue for chrono::NaiveDate {
-    fn into_value(self) -> Value {
-        Value::NaiveDate(self)
-    }
-}
-
-impl IntoValue for chrono::NaiveTime {
-    fn into_value(self) -> Value {
-        Value::NaiveTime(self)
-    }
-}
-
-impl IntoValue for chrono::NaiveDateTime {
-    fn into_value(self) -> Value {
-        Value::NaiveDateTime(self)
-    }
-}
-
-impl IntoValue for chrono::DateTime<chrono::Utc> {
-    fn into_value(self) -> Value {
-        Value::DateTimeUtc(self)
-    }
-}
-
-impl IntoValue for chrono::DateTime<chrono::FixedOffset> {
-    fn into_value(self) -> Value {
-        Value::DateTimeFixed(self)
-    }
-}
-
-// 精确数值
-impl IntoValue for bigdecimal::BigDecimal {
-    fn into_value(self) -> Value {
-        Value::BigDecimal(self)
-    }
-}
-
-// UUID
-impl IntoValue for uuid::Uuid {
-    fn into_value(self) -> Value {
-        Value::Uuid(self)
-    }
-}
-
-// JSON
-impl IntoValue for serde_json::Value {
-    fn into_value(self) -> Value {
-        Value::Json(self)
-    }
-}
-
-// Option 类型
-impl<T: IntoValue> IntoValue for Option<T> {
-    fn into_value(self) -> Value {
-        match self {
-            Some(v) => v.into_value(),
-            None => Value::None,
+            fn from_row(row: &tokio_postgres::Row) -> Result<Self, crate::Error> {
+                Ok(Self {
+                    amount: {
+                        let wrapper: SqlTypeWrapper<_> = row.try_get("amount")?;
+                        wrapper.0
+                    },
+                })
+            }
         }
     }
 }

@@ -20,7 +20,7 @@ sqlx = { version = "0.7", optional = true, features = [
 ] }
 conservator_macro = { version = "0.2", path = "../conservator_macro" }
 chrono = "0.4"
-bigdecimal = "0.4"
+rust_decimal = { version = "1", features = ["db-tokio-postgres"] }
 uuid = { version = "1", features = ["v4"] }
 serde_json = "1"
 tokio-postgres = { version = "0.7.15", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }

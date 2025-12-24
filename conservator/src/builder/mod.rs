@@ -94,7 +94,7 @@ impl JoinType {
 }
 
 /// JOIN 子句
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct JoinClause {
     join_type: JoinType,
     table: String,

@@ -60,26 +60,26 @@ pub struct CreateProfile {
 
 // 多数据类型实体
 // TODO: BigDecimal 暂不支持，等待 tokio-postgres 支持后启用
-// #[derive(Debug, Domain)]
-// #[domain(table = "products")]
-// pub struct Product {
-//     #[domain(primary_key)]
-//     pub id: i32,
-//     pub uuid: uuid::Uuid,
-//     pub name: String,
-//     pub price: bigdecimal::BigDecimal,
-//     pub metadata: serde_json::Value,
-//     pub created_at: chrono::DateTime<chrono::Utc>,
-// }
-//
-// #[derive(Debug, Creatable)]
-// pub struct CreateProduct {
-//     pub uuid: uuid::Uuid,
-//     pub name: String,
-//     pub price: bigdecimal::BigDecimal,
-//     pub metadata: serde_json::Value,
-//     pub created_at: chrono::DateTime<chrono::Utc>,
-// }
+#[derive(Debug, Domain)]
+#[domain(table = "products")]
+pub struct Product {
+    #[domain(primary_key)]
+    pub id: i32,
+    pub uuid: uuid::Uuid,
+    pub name: String,
+    pub price: rust_decimal::Decimal,
+    pub metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Creatable)]
+pub struct CreateProduct {
+    pub uuid: uuid::Uuid,
+    pub name: String,
+    pub price: rust_decimal::Decimal,
+    pub metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
 
 // ========== 共享容器设置 ==========
 
@@ -1089,7 +1089,7 @@ async fn test_empty_string() {
 // 多数据类型测试
 // ==========================================
 // TODO: 以下测试等待 tokio-postgres BigDecimal 支持后启用
-/*
+
 #[tokio::test]
 async fn test_uuid_type() {
     let pool = setup_test_db().await;
@@ -1112,10 +1112,10 @@ async fn test_uuid_type() {
 }
 
 #[tokio::test]
-async fn test_bigdecimal_type() {
+async fn test_decimal_type() {
     let pool = setup_test_db().await;
 
-    let price: bigdecimal::BigDecimal = "1234.56".parse().unwrap();
+    let price: rust_decimal::Decimal = "1234.56".parse().unwrap();
     let pk = CreateProduct {
         uuid: uuid::Uuid::new_v4(),
         name: "Expensive Item".into(),
@@ -1182,7 +1182,6 @@ async fn test_datetime_type() {
     let diff = (product.created_at - created_at).num_milliseconds().abs();
     assert!(diff < 1000); // Within 1 second
 }
-*/
 
 // ==========================================
 // Projection 测试
@@ -1913,7 +1912,7 @@ async fn test_datetime_combined_with_other_filters() {
 
     // 查找价格 > 15 且 7 天内创建的产品
     let cutoff = Utc::now() - Duration::days(7);
-    let price: bigdecimal::BigDecimal = "15.00".parse().unwrap();
+    let price: rust_decimal::Decimal = "15.00".parse().unwrap();
 
     let products = Product::select()
         .filter(Product::COLUMNS.price.gt(price) & Product::COLUMNS.created_at.gt(cutoff))

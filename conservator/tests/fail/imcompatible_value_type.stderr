@@ -1,0 +1,31 @@
+error[E0308]: mismatched types
+  --> tests/fail/imcompatible_value_type.rs:17:34
+   |
+17 |         .set(User::COLUMNS.name, 123)
+   |          ---                     ^^^ expected `String`, found integer
+   |          |
+   |          arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/builder/update.rs
+   |
+   |     pub fn set<V: crate::IntoValue>(
+   |            ^^^
+help: try using a conversion method
+   |
+17 |         .set(User::COLUMNS.name, 123.to_string())
+   |                                     ++++++++++++
+
+error[E0599]: no method named `build` found for struct `UpdateBuilder<User, true>` in the current scope
+  --> tests/fail/imcompatible_value_type.rs:18:10
+   |
+16 |       let _result = User::update_query()
+   |  ___________________-
+17 | |         .set(User::COLUMNS.name, 123)
+18 | |         .build();
+   | |         -^^^^^ method not found in `UpdateBuilder<User, true>`
+   | |_________|
+   |
+   |
+   = note: the method was found for
+           - `UpdateBuilder<T, true, true>`

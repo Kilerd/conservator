@@ -18,7 +18,7 @@ pub use error::Error;
 pub use executor::Executor;
 pub use expression::{Expression, FieldInfo, Operator, SqlResult};
 pub use field::Field;
-pub use value::{IntoValue, Value};
+pub use value::{IntoValue, SqlType, SqlTypeWrapper, Value};
 
 #[cfg(feature = "migrate")]
 pub use sqlx::migrate;
