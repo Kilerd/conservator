@@ -61,9 +61,7 @@ impl PooledConnection {
             config.dbname = Some(path.to_string());
         }
 
-        let pool = config
-            .create_pool(Some(Runtime::Tokio1), NoTls)
-            .map_err(|e| Error::Pool(format!("Failed to create pool: {:?}", e)))?;
+        let pool = config.create_pool(Some(Runtime::Tokio1), NoTls)?;
         Ok(Self { pool })
     }
 
@@ -96,9 +94,7 @@ impl PooledConnection {
     /// # }
     /// ```
     pub fn from_config(config: Config) -> Result<Self, Error> {
-        let pool = config
-            .create_pool(Some(Runtime::Tokio1), NoTls)
-            .map_err(|e| Error::Pool(format!("Failed to create pool: {:?}", e)))?;
+        let pool = config.create_pool(Some(Runtime::Tokio1), NoTls)?;
         Ok(Self { pool })
     }
 
@@ -126,12 +122,7 @@ impl PooledConnection {
     /// # }
     /// ```
     pub async fn get(&self) -> Result<Connection, Error> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| Error::Pool(format!("Failed to get connection: {:?}", e)))?;
-
+        let client = self.pool.get().await?;
         Ok(Connection { client })
     }
 }

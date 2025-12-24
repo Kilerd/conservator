@@ -9,7 +9,13 @@ pub enum Error {
 
     /// deadpool-postgres 连接池错误
     #[error("Pool error: {0}")]
-    Pool(String),
+    Pool(#[from] deadpool_postgres::PoolError),
+
+    /// deadpool-postgres 连接池创建错误
+    #[error("Create pool error: {0}")]
+    CreatePool(
+        #[from] deadpool::managed::CreatePoolError<deadpool_postgres::ConfigError>,
+    ),
 
     /// deadpool-postgres 配置错误
     #[error("Config error: {0}")]
