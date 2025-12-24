@@ -17,7 +17,7 @@ static POSTGRES_CONTAINER: OnceLock<Container<'static, Postgres>> = OnceLock::ne
 static DB_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn docker() -> &'static Cli {
-    DOCKER.get_or_init(|| Cli::default())
+    DOCKER.get_or_init(Cli::default)
 }
 
 fn postgres_container() -> &'static Container<'static, Postgres> {

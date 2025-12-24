@@ -380,9 +380,13 @@ impl Executor for PooledConnection {
     }
 }
 
-/// 为 `&PooledConnection` 实现 `Executor` trait
+/// Generic blanket implementation for references to Executor types
+///
+/// This eliminates the need for separate implementations for `&PooledConnection`,
+/// `&Connection`, and `&Transaction<'_>` by providing a single implementation
+/// that forwards all calls to the referenced executor.
 #[async_trait]
-impl Executor for &PooledConnection {
+impl<T: Executor + ?Sized> Executor for &T {
     async fn execute(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error> {
         (*self).execute(query, params).await
     }
@@ -395,71 +399,13 @@ impl Executor for &PooledConnection {
         (*self).query(query, params).await
     }
 
-    async fn query_scalar<T>(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<T, Error>
-    where
-        T: for<'r> FromSql<'r>,
-    {
-        (*self).query_scalar(query, params).await
-    }
-
-    async fn query_opt(
+    async fn query_scalar<T2>(
         &self,
         query: &str,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<Row>, Error> {
-        (*self).query_opt(query, params).await
-    }
-}
-
-/// 为 `&Connection` 实现 `Executor` trait
-#[async_trait]
-impl Executor for &Connection {
-    async fn execute(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error> {
-        (*self).execute(query, params).await
-    }
-
-    async fn query_one(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Row, Error> {
-        (*self).query_one(query, params).await
-    }
-
-    async fn query(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Vec<Row>, Error> {
-        (*self).query(query, params).await
-    }
-
-    async fn query_scalar<T>(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<T, Error>
+    ) -> Result<T2, Error>
     where
-        T: for<'r> FromSql<'r>,
-    {
-        (*self).query_scalar(query, params).await
-    }
-
-    async fn query_opt(
-        &self,
-        query: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<Row>, Error> {
-        (*self).query_opt(query, params).await
-    }
-}
-
-/// 为 `&Transaction` 实现 `Executor` trait
-#[async_trait]
-impl<'a> Executor for &Transaction<'a> {
-    async fn execute(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error> {
-        (*self).execute(query, params).await
-    }
-
-    async fn query_one(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Row, Error> {
-        (*self).query_one(query, params).await
-    }
-
-    async fn query(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Vec<Row>, Error> {
-        (*self).query(query, params).await
-    }
-
-    async fn query_scalar<T>(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<T, Error>
-    where
-        T: for<'r> FromSql<'r>,
+        T2: for<'r> FromSql<'r>,
     {
         (*self).query_scalar(query, params).await
     }
