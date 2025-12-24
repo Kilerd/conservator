@@ -9,3 +9,6 @@ mod migrate;
 
 #[path = "integration/sql_macro.rs"]
 mod sql_macro;
+
+#[path = "integration/executor_refs.rs"]
+mod executor_refs;
