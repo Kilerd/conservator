@@ -163,3 +163,27 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  msrv:
+    name: MSRV Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust MSRV toolchain
+        uses: dtolnay/rust-toolchain@1.85
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-
+            ${{ runner.os }}-cargo-
+
+      - name: Check with MSRV
+        run: cargo check --all-targets
+
