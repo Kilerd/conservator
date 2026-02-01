@@ -14,8 +14,8 @@ mod migrate;
 mod value;
 
 pub use builder::{
-    DeleteBuilder, InsertBuilder, InsertManyBuilder, IntoOrderedField, JoinType, Order,
-    OrderedField, SelectBuilder, UpdateBuilder,
+    DeleteBuilder, InsertBuilder, InsertManyBuilder, IntoOrderByExpr, IntoOrderedField, JoinType,
+    Order, OrderByExpr, OrderedField, SelectBuilder, UpdateBuilder, random,
 };
 pub use conn::{Connection, PooledConnection, Transaction};
 pub use error::Error;

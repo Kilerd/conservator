@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::builder::{IntoOrderedField, Order, OrderedField};
+use crate::builder::{IntoOrderByExpr, IntoOrderedField, Order, OrderByExpr, OrderedField};
 use crate::expression::{Expression, FieldInfo, Operator};
 use crate::value::{IntoValue, Value};
 
@@ -87,6 +87,19 @@ impl<T> IntoOrderedField for Field<T> {
 impl<T> IntoOrderedField for &Field<T> {
     fn into_ordered_field(self) -> OrderedField {
         OrderedField::new(self.info(), Order::Asc)
+    }
+}
+
+// Field<T> 转换为 OrderByExpr（新接口）
+impl<T> IntoOrderByExpr for Field<T> {
+    fn into_order_by_expr(self) -> OrderByExpr {
+        OrderByExpr::Field(OrderedField::new(self.info(), Order::Asc))
+    }
+}
+
+impl<T> IntoOrderByExpr for &Field<T> {
+    fn into_order_by_expr(self) -> OrderByExpr {
+        OrderByExpr::Field(OrderedField::new(self.info(), Order::Asc))
     }
 }
 

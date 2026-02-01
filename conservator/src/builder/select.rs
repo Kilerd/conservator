@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{Domain, Executor, Expression, FieldInfo, Selectable, SqlResult, Value};
 
-use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
+use super::{IntoOrderByExpr, JoinClause, JoinType, OrderByExpr};
 
 /// SELECT 查询构建器
 ///
@@ -17,14 +17,26 @@ use super::{IntoOrderedField, JoinClause, JoinType, OrderedField};
 ///     .limit(10)
 ///     .build();
 /// ```
+/// DISTINCT 类型
+#[derive(Debug, Clone)]
+pub enum DistinctMode {
+    /// 不使用 DISTINCT
+    None,
+    /// DISTINCT（对所有返回列去重）
+    All,
+    /// DISTINCT ON (PostgreSQL 特定语法)
+    On(Vec<FieldInfo>),
+}
+
 #[derive(Debug)]
 pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain> {
     filter_expr: Option<Expression>,
-    order_by: Vec<OrderedField>,
+    order_by: Vec<OrderByExpr>,
     limit: Option<usize>,
     offset: Option<usize>,
     group_by: Vec<FieldInfo>,
     joins: Vec<JoinClause>,
+    distinct: DistinctMode,
     _phantom: PhantomData<CoreDomain>,
     _returning_phantom: PhantomData<Returning>,
 }
@@ -45,6 +57,7 @@ impl<T: Domain> SelectBuilder<T, T> {
             offset: None,
             group_by: Vec::new(),
             joins: Vec::new(),
+            distinct: DistinctMode::None,
             _phantom: PhantomData,
             _returning_phantom: PhantomData,
         }
@@ -60,6 +73,7 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             offset: self.offset,
             group_by: self.group_by,
             joins: self.joins,
+            distinct: self.distinct,
             _phantom: self._phantom,
             _returning_phantom: PhantomData,
         }
@@ -78,20 +92,31 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
 
     /// 添加 ORDER BY 子句
     ///
-    /// 支持三种用法:
-    /// - `.order_by(field)` - 默认升序
-    /// - `.order_by(field.asc())` - 显式升序
-    /// - `.order_by(field.desc())` - 显式降序
+    /// 支持多种用法:
+    /// - `.order_by(field)` - 字段默认升序
+    /// - `.order_by(field.asc())` - 字段显式升序
+    /// - `.order_by(field.desc())` - 字段显式降序
+    /// - `.order_by(random())` - 随机排序
     ///
     /// # Example
     /// ```ignore
+    /// use conservator::builder::random;
+    ///
     /// User::select()
     ///     .order_by(User::COLUMNS.score.desc())
     ///     .order_by(User::COLUMNS.name)  // 默认升序
     ///     .all(&pool)
+    ///     .await?;
+    ///
+    /// // 随机排序
+    /// Novel::select()
+    ///     .order_by(random())
+    ///     .limit(10)
+    ///     .all(&pool)
+    ///     .await?;
     /// ```
-    pub fn order_by<F: IntoOrderedField>(mut self, field: F) -> Self {
-        self.order_by.push(field.into_ordered_field());
+    pub fn order_by<F: IntoOrderByExpr>(mut self, expr: F) -> Self {
+        self.order_by.push(expr.into_order_by_expr());
         self
     }
 
@@ -146,6 +171,72 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
         self
     }
 
+    /// 启用 DISTINCT，对所有返回列去重
+    ///
+    /// # Example
+    /// ```ignore
+    /// // 对所有列去重
+    /// let users = User::select()
+    ///     .distinct()
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT * FROM users
+    ///
+    /// // 只查询 distinct 的特定列
+    /// let categories = Novel::select()
+    ///     .returning::<CategoryRow>()
+    ///     .distinct()
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT "category" FROM novels
+    /// ```
+    pub fn distinct(mut self) -> Self {
+        self.distinct = DistinctMode::All;
+        self
+    }
+
+    /// 使用 DISTINCT ON（PostgreSQL 特定语法）
+    ///
+    /// 根据指定的列去重，返回每组的第一行
+    ///
+    /// # Example
+    /// ```ignore
+    /// // 每个分类返回一个商品
+    /// let products = Product::select()
+    ///     .distinct_on(Product::COLUMNS.category)
+    ///     .order_by(Product::COLUMNS.category)
+    ///     .order_by(Product::COLUMNS.price.desc())
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT ON ("category") * FROM products
+    /// //      ORDER BY "category", "price" DESC
+    /// ```
+    pub fn distinct_on<F>(mut self, field: F) -> Self
+    where
+        F: Into<FieldInfo>,
+    {
+        self.distinct = DistinctMode::On(vec![field.into()]);
+        self
+    }
+
+    /// 使用 DISTINCT ON 多个列（PostgreSQL 特定语法）
+    ///
+    /// # Example
+    /// ```ignore
+    /// let products = Product::select()
+    ///     .distinct_on_many(vec![
+    ///         Product::COLUMNS.category.into(),
+    ///         Product::COLUMNS.brand.into(),
+    ///     ])
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT ON ("category", "brand") * FROM products
+    /// ```
+    pub fn distinct_on_many(mut self, fields: Vec<FieldInfo>) -> Self {
+        self.distinct = DistinctMode::On(fields);
+        self
+    }
+
     /// 构建完整的 SQL 查询
     ///
     /// 返回包含 SQL 字符串和参数值的 SqlResult
@@ -160,7 +251,26 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             .map(|name| format!("\"{}\"", name))
             .collect::<Vec<_>>()
             .join(", ");
-        sql_parts.push(format!("SELECT {} FROM {}", columns, T::TABLE_NAME));
+
+        let distinct_clause = match &self.distinct {
+            DistinctMode::None => String::new(),
+            DistinctMode::All => "DISTINCT ".to_string(),
+            DistinctMode::On(fields) => {
+                let field_names = fields
+                    .iter()
+                    .map(|f| f.quoted_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("DISTINCT ON ({}) ", field_names)
+            }
+        };
+
+        sql_parts.push(format!(
+            "SELECT {}{} FROM {}",
+            distinct_clause,
+            columns,
+            T::TABLE_NAME
+        ));
 
         // JOIN 子句
         for join in self.joins {
@@ -199,7 +309,7 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             let order_by_cols = self
                 .order_by
                 .iter()
-                .map(|of| format!("{} {}", of.field.quoted_name(), of.order.to_sql()))
+                .map(|expr| expr.to_sql())
                 .collect::<Vec<_>>()
                 .join(", ");
             sql_parts.push(format!("ORDER BY {}", order_by_cols));
@@ -396,5 +506,86 @@ mod tests {
             "SELECT \"id\", \"name\", \"email\" FROM users WHERE \"id\" > $1 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
         );
         assert_eq!(result.values.len(), 1);
+    }
+
+    #[test]
+    fn test_select_with_distinct() {
+        let result = SelectBuilder::<TestUser>::new().distinct().build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT \"id\", \"name\", \"email\" FROM users"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_distinct_with_filter() {
+        let expr = Expression::comparison(id_field(), Operator::Gt, Value::new(10));
+        let result = SelectBuilder::<TestUser>::new()
+            .distinct()
+            .filter(expr)
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT \"id\", \"name\", \"email\" FROM users WHERE \"id\" > $1"
+        );
+        assert_eq!(result.values.len(), 1);
+    }
+
+    #[test]
+    fn test_select_with_random_order() {
+        use crate::builder::random;
+
+        let result = SelectBuilder::<TestUser>::new()
+            .order_by(random())
+            .limit(10)
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users ORDER BY random() LIMIT 10"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_mixed_ordering() {
+        use crate::builder::{Order, OrderedField, random};
+
+        let result = SelectBuilder::<TestUser>::new()
+            .order_by(OrderedField::new(name_field(), Order::Asc))
+            .order_by(random())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC, random()"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_distinct_on() {
+        let result = SelectBuilder::<TestUser>::new()
+            .distinct_on(name_field())
+            .order_by(name_field())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT ON (\"name\") \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_distinct_on_many() {
+        let result = SelectBuilder::<TestUser>::new()
+            .distinct_on_many(vec![name_field(), id_field()])
+            .order_by(name_field())
+            .order_by(id_field())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT ON (\"name\", \"id\") \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC, \"id\" ASC"
+        );
+        assert!(result.values.is_empty());
     }
 }
