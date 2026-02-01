@@ -12,3 +12,6 @@ mod sql_macro;
 
 #[path = "integration/executor_refs.rs"]
 mod executor_refs;
+
+#[path = "integration/query_functions.rs"]
+mod query_functions;
