@@ -337,3 +337,130 @@ async fn test_distinct_preserves_null_handling() {
     let has_null = categories.iter().any(|c| c.category.is_none());
     assert!(has_null, "DISTINCT should preserve NULL values");
 }
+
+#[tokio::test]
+async fn test_distinct_on_single_field() {
+    let pool = setup_test_db().await;
+
+    // Insert test data with duplicate categories, different prices
+    let client = pool.get().await.unwrap();
+    client
+        .execute(
+            "INSERT INTO products (name, category, price) VALUES
+                ('Apple', 'Fruit', 100),
+                ('Banana', 'Fruit', 80),
+                ('Orange', 'Fruit', 90),
+                ('Carrot', 'Vegetable', 50),
+                ('Tomato', 'Vegetable', 60),
+                ('Broccoli', 'Vegetable', 70)",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Query with DISTINCT ON category, ordered by category and price DESC
+    // Should return highest-priced product in each category
+    let products = Product::select()
+        .distinct_on(Product::COLUMNS.category)
+        .order_by(Product::COLUMNS.category)
+        .order_by(Product::COLUMNS.price.desc())
+        .all(&client)
+        .await
+        .unwrap();
+
+    // Should return exactly 2 products (one per category)
+    assert_eq!(products.len(), 2);
+
+    // Find Fruit and Vegetable products
+    let fruit = products.iter().find(|p| p.category == "Fruit").unwrap();
+    let vegetable = products
+        .iter()
+        .find(|p| p.category == "Vegetable")
+        .unwrap();
+
+    // Should return highest priced in each category
+    assert_eq!(fruit.name, "Apple"); // 100 is highest in Fruit
+    assert_eq!(vegetable.name, "Broccoli"); // 70 is highest in Vegetable
+}
+
+#[tokio::test]
+async fn test_distinct_on_multiple_fields() {
+    let pool = setup_test_db().await;
+
+    // Create table with brand column
+    let client = pool.get().await.unwrap();
+    client
+        .execute(
+            "CREATE TABLE items (
+                id SERIAL PRIMARY KEY,
+                category TEXT NOT NULL,
+                brand TEXT NOT NULL,
+                price INTEGER NOT NULL
+            )",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Insert test data with duplicate category+brand combinations
+    client
+        .execute(
+            "INSERT INTO items (category, brand, price) VALUES
+                ('Fruit', 'BrandA', 100),
+                ('Fruit', 'BrandA', 80),
+                ('Fruit', 'BrandB', 90),
+                ('Vegetable', 'BrandA', 50),
+                ('Vegetable', 'BrandA', 60),
+                ('Vegetable', 'BrandB', 70)",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    #[derive(Debug, Domain)]
+    #[domain(table = "items")]
+    struct Item {
+        #[domain(primary_key)]
+        id: i32,
+        category: String,
+        brand: String,
+        price: i32,
+    }
+
+    // Query with DISTINCT ON (category, brand)
+    let items = Item::select()
+        .distinct_on_many(vec![
+            Item::COLUMNS.category.into(),
+            Item::COLUMNS.brand.into(),
+        ])
+        .order_by(Item::COLUMNS.category)
+        .order_by(Item::COLUMNS.brand)
+        .order_by(Item::COLUMNS.price.desc())
+        .all(&client)
+        .await
+        .unwrap();
+
+    // Should return 4 items (one per category+brand combination)
+    assert_eq!(items.len(), 4);
+
+    // Verify each category+brand combination appears once
+    let mut seen = std::collections::HashSet::new();
+    for item in &items {
+        let key = format!("{}:{}", item.category, item.brand);
+        assert!(!seen.contains(&key), "Duplicate category+brand found");
+        seen.insert(key);
+    }
+
+    // Verify we got the highest price for each combination
+    let fruit_a = items
+        .iter()
+        .find(|i| i.category == "Fruit" && i.brand == "BrandA")
+        .unwrap();
+    assert_eq!(fruit_a.price, 100);
+
+    let veg_a = items
+        .iter()
+        .find(|i| i.category == "Vegetable" && i.brand == "BrandA")
+        .unwrap();
+    assert_eq!(veg_a.price, 60);
+}

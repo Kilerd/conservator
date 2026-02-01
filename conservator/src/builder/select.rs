@@ -17,6 +17,17 @@ use super::{IntoOrderByExpr, JoinClause, JoinType, OrderByExpr};
 ///     .limit(10)
 ///     .build();
 /// ```
+/// DISTINCT 类型
+#[derive(Debug, Clone)]
+pub enum DistinctMode {
+    /// 不使用 DISTINCT
+    None,
+    /// DISTINCT（对所有返回列去重）
+    All,
+    /// DISTINCT ON (PostgreSQL 特定语法)
+    On(Vec<FieldInfo>),
+}
+
 #[derive(Debug)]
 pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain> {
     filter_expr: Option<Expression>,
@@ -25,7 +36,7 @@ pub struct SelectBuilder<CoreDomain: Domain, Returning: Selectable = CoreDomain>
     offset: Option<usize>,
     group_by: Vec<FieldInfo>,
     joins: Vec<JoinClause>,
-    distinct: bool,
+    distinct: DistinctMode,
     _phantom: PhantomData<CoreDomain>,
     _returning_phantom: PhantomData<Returning>,
 }
@@ -46,7 +57,7 @@ impl<T: Domain> SelectBuilder<T, T> {
             offset: None,
             group_by: Vec::new(),
             joins: Vec::new(),
-            distinct: false,
+            distinct: DistinctMode::None,
             _phantom: PhantomData,
             _returning_phantom: PhantomData,
         }
@@ -160,10 +171,18 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
         self
     }
 
-    /// 启用 DISTINCT，去除重复行
+    /// 启用 DISTINCT，对所有返回列去重
     ///
     /// # Example
     /// ```ignore
+    /// // 对所有列去重
+    /// let users = User::select()
+    ///     .distinct()
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT * FROM users
+    ///
+    /// // 只查询 distinct 的特定列
     /// let categories = Novel::select()
     ///     .returning::<CategoryRow>()
     ///     .distinct()
@@ -172,7 +191,49 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
     /// // SQL: SELECT DISTINCT "category" FROM novels
     /// ```
     pub fn distinct(mut self) -> Self {
-        self.distinct = true;
+        self.distinct = DistinctMode::All;
+        self
+    }
+
+    /// 使用 DISTINCT ON（PostgreSQL 特定语法）
+    ///
+    /// 根据指定的列去重，返回每组的第一行
+    ///
+    /// # Example
+    /// ```ignore
+    /// // 每个分类返回一个商品
+    /// let products = Product::select()
+    ///     .distinct_on(Product::COLUMNS.category)
+    ///     .order_by(Product::COLUMNS.category)
+    ///     .order_by(Product::COLUMNS.price.desc())
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT ON ("category") * FROM products
+    /// //      ORDER BY "category", "price" DESC
+    /// ```
+    pub fn distinct_on<F>(mut self, field: F) -> Self
+    where
+        F: Into<FieldInfo>,
+    {
+        self.distinct = DistinctMode::On(vec![field.into()]);
+        self
+    }
+
+    /// 使用 DISTINCT ON 多个列（PostgreSQL 特定语法）
+    ///
+    /// # Example
+    /// ```ignore
+    /// let products = Product::select()
+    ///     .distinct_on_many(vec![
+    ///         Product::COLUMNS.category.into(),
+    ///         Product::COLUMNS.brand.into(),
+    ///     ])
+    ///     .all(&pool)
+    ///     .await?;
+    /// // SQL: SELECT DISTINCT ON ("category", "brand") * FROM products
+    /// ```
+    pub fn distinct_on_many(mut self, fields: Vec<FieldInfo>) -> Self {
+        self.distinct = DistinctMode::On(fields);
         self
     }
 
@@ -190,10 +251,23 @@ impl<T: Domain, Returning: Selectable> SelectBuilder<T, Returning> {
             .map(|name| format!("\"{}\"", name))
             .collect::<Vec<_>>()
             .join(", ");
-        let distinct_keyword = if self.distinct { "DISTINCT " } else { "" };
+
+        let distinct_clause = match &self.distinct {
+            DistinctMode::None => String::new(),
+            DistinctMode::All => "DISTINCT ".to_string(),
+            DistinctMode::On(fields) => {
+                let field_names = fields
+                    .iter()
+                    .map(|f| f.quoted_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("DISTINCT ON ({}) ", field_names)
+            }
+        };
+
         sql_parts.push(format!(
             "SELECT {}{} FROM {}",
-            distinct_keyword,
+            distinct_clause,
             columns,
             T::TABLE_NAME
         ));
@@ -484,6 +558,33 @@ mod tests {
         assert_eq!(
             result.sql,
             "SELECT \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC, random()"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_distinct_on() {
+        let result = SelectBuilder::<TestUser>::new()
+            .distinct_on(name_field())
+            .order_by(name_field())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT ON (\"name\") \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC"
+        );
+        assert!(result.values.is_empty());
+    }
+
+    #[test]
+    fn test_select_with_distinct_on_many() {
+        let result = SelectBuilder::<TestUser>::new()
+            .distinct_on_many(vec![name_field(), id_field()])
+            .order_by(name_field())
+            .order_by(id_field())
+            .build();
+        assert_eq!(
+            result.sql,
+            "SELECT DISTINCT ON (\"name\", \"id\") \"id\", \"name\", \"email\" FROM users ORDER BY \"name\" ASC, \"id\" ASC"
         );
         assert!(result.values.is_empty());
     }
