@@ -47,7 +47,7 @@ pub(crate) fn handler(
         impl ::conservator::Selectable for #ident {
             const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
 
-            fn from_row(row: &::tokio_postgres::Row) -> Result<Self, ::conservator::Error> {
+            fn from_row(row: &::conservator::Row) -> Result<Self, ::conservator::Error> {
                 use conservator::SqlTypeWrapper;
                 Ok(Self {
                     #(#field_idents: { let wrapper: SqlTypeWrapper<_> = row.try_get(#field_names)?; wrapper.0 }),*

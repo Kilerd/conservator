@@ -409,7 +409,7 @@ mod tests {
     impl Selectable for TestUser {
         const COLUMN_NAMES: &'static [&'static str] = &["id", "name", "email"];
 
-        fn from_row(row: &tokio_postgres::Row) -> Result<Self, crate::Error> {
+        fn from_row(row: &crate::Row) -> Result<Self, crate::Error> {
             Ok(Self {
                 id: row.try_get("id")?,
                 name: row.try_get("name")?,

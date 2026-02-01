@@ -219,7 +219,7 @@ mod test {
         impl Selectable for User {
             const COLUMN_NAMES: &'static [&'static str] = &["amount"];
 
-            fn from_row(row: &tokio_postgres::Row) -> Result<Self, crate::Error> {
+            fn from_row(row: &crate::Row) -> Result<Self, crate::Error> {
                 Ok(Self {
                     amount: {
                         let wrapper: SqlTypeWrapper<_> = row.try_get("amount")?;
