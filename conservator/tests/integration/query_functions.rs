@@ -2,12 +2,12 @@
 //!
 //! Tests DISTINCT and random() functionality with real database.
 
-use conservator::{random, Domain, Executor, PooledConnection, Selectable};
+use conservator::{Domain, Executor, PooledConnection, Selectable, random};
 use deadpool_postgres::{Config, PoolConfig};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
-use testcontainers::{clients::Cli, Container};
+use std::sync::atomic::{AtomicU32, Ordering};
+use testcontainers::{Container, clients::Cli};
 use testcontainers_modules::postgres::Postgres;
 
 // Shared Docker client and container
@@ -258,11 +258,7 @@ async fn test_mixed_ordering_field_and_random() {
         client
             .execute(
                 "INSERT INTO products (name, category, price) VALUES ($1, $2, $3)",
-                &[
-                    &format!("Product {}", i),
-                    &"SameCategory".to_string(),
-                    &100,
-                ],
+                &[&format!("Product {}", i), &"SameCategory".to_string(), &100],
             )
             .await
             .unwrap();
@@ -373,10 +369,7 @@ async fn test_distinct_on_single_field() {
 
     // Find Fruit and Vegetable products
     let fruit = products.iter().find(|p| p.category == "Fruit").unwrap();
-    let vegetable = products
-        .iter()
-        .find(|p| p.category == "Vegetable")
-        .unwrap();
+    let vegetable = products.iter().find(|p| p.category == "Vegetable").unwrap();
 
     // Should return highest priced in each category
     assert_eq!(fruit.name, "Apple"); // 100 is highest in Fruit

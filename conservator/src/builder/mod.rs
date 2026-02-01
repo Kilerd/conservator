@@ -5,7 +5,7 @@ mod update;
 
 pub use delete::DeleteBuilder;
 pub use insert::{InsertBuilder, InsertManyBuilder};
-pub use select::{DistinctMode, SelectBuilder};
+pub use select::SelectBuilder;
 pub use update::UpdateBuilder;
 
 use crate::expression::FieldInfo;
