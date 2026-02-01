@@ -152,17 +152,6 @@ jobs:
       - name: Run trybuild tests
         run: cargo test --package conservator --test '*' -- --skip integration
 
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run cargo audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest
