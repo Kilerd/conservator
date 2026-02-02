@@ -4,6 +4,9 @@ extern crate self as conservator;
 use async_trait::async_trait;
 pub use conservator_macro::{Creatable, Domain, Selectable, sql};
 
+// Re-export tokio_postgres types used by macros
+pub use tokio_postgres::Row;
+
 mod builder;
 mod conn;
 mod error;
@@ -39,10 +42,10 @@ pub trait Selectable: Sized + Send + Unpin {
     /// 所有列名（用于 SELECT 语句）
     const COLUMN_NAMES: &'static [&'static str];
 
-    /// 从 `tokio_postgres::Row` 创建实例
+    /// 从 `Row` 创建实例
     ///
     /// 这是 `Selectable` 的核心方法，用于将数据库行转换为 Rust 类型。
-    fn from_row(row: &tokio_postgres::Row) -> Result<Self, Error>;
+    fn from_row(row: &Row) -> Result<Self, Error>;
 }
 
 #[async_trait]
