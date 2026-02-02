@@ -15,3 +15,6 @@ mod executor_refs;
 
 #[path = "integration/query_functions.rs"]
 mod query_functions;
+
+#[path = "integration/vector_types_simple.rs"]
+mod vector_types_simple;

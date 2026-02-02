@@ -195,7 +195,13 @@ impl_sql_type!(
     u32,
     f32,
     f64,
-    Vec<u8>, // PostgreSQL BYTEA
+    Vec<u8>,     // PostgreSQL BYTEA
+    Vec<i16>,    // PostgreSQL INT2[]
+    Vec<i32>,    // PostgreSQL INT4[]
+    Vec<i64>,    // PostgreSQL INT8[]
+    Vec<f32>,    // PostgreSQL FLOAT4[]
+    Vec<f64>,    // PostgreSQL FLOAT8[]
+    Vec<String>, // PostgreSQL TEXT[]
     Uuid,
     chrono::DateTime<chrono::Utc>,
     chrono::DateTime<chrono::Local>,
@@ -228,5 +234,19 @@ mod test {
                 })
             }
         }
+    }
+
+    #[test]
+    fn test_vector_types_compile() {
+        // Verify that vector types can be converted to Value
+        use crate::IntoValue;
+
+        let _v1 = vec![1_i16, 2, 3].into_value();
+        let _v2 = vec![1_i32, 2, 3].into_value();
+        let _v3 = vec![1_i64, 2, 3].into_value();
+        let _v4 = vec![1.0_f32, 2.0, 3.0].into_value();
+        let _v5 = vec![1.0_f64, 2.0, 3.0].into_value();
+        let _v6 = vec!["a".to_string(), "b".to_string()].into_value();
+        let _v7 = vec![1_u8, 2, 3].into_value(); // BYTEA
     }
 }
