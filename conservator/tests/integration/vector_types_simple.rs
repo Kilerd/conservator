@@ -258,7 +258,10 @@ async fn test_vec_i32_any_operator() {
 
     // Insert test data
     client
-        .execute("INSERT INTO test_any (value) VALUES (1), (2), (3), (4), (5)", &[])
+        .execute(
+            "INSERT INTO test_any (value) VALUES (1), (2), (3), (4), (5)",
+            &[],
+        )
         .await
         .unwrap();
 
