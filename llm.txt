@@ -1,0 +1,397 @@
+# Conservator ORM - AI Assistant Guide
+
+## Overview
+Conservator is a lightweight, type-safe ORM for PostgreSQL built on tokio-postgres. It provides compile-time guarantees, async operations, and minimal boilerplate through derive macros.
+
+## Quick Start
+
+### 1. Define Entity
+```rust
+use conservator::{Domain, Creatable};
+
+#[derive(Debug, Domain)]
+#[domain(table = "users")]
+pub struct User {
+    #[domain(primary_key)]
+    pub id: i32,
+    pub name: String,
+    pub email: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Creatable)]
+pub struct CreateUser {
+    pub name: String,
+    pub email: String,
+}
+```
+
+### 2. Setup Connection Pool
+```rust
+use conservator::PooledConnection;
+
+let pool = PooledConnection::from_url("postgres://user:pass@localhost/db").await?;
+```
+
+### 3. Basic CRUD Operations
+```rust
+// CREATE
+let user_id = CreateUser {
+    name: "Alice".into(),
+    email: "alice@example.com".into()
+}
+.insert::<User>()
+.returning_pk(&pool)
+.await?;
+
+// READ
+let user = User::fetch_one_by_pk(&user_id, &pool).await?;
+let all_users = User::select().all(&pool).await?;
+
+// UPDATE - Query Builder Style
+User::update()
+    .set(User::COLUMNS.name, "Bob".to_string())
+    .filter(User::COLUMNS.id.eq(user_id))
+    .execute(&pool)
+    .await?;
+
+// UPDATE - Active Record Style
+let mut user = User::fetch_one_by_pk(&user_id, &pool).await?;
+user.name = "Bob".to_string();
+user.save(&pool).await?;
+
+// DELETE
+User::delete()
+    .filter(User::COLUMNS.id.eq(user_id))
+    .execute(&pool)
+    .await?;
+```
+
+## Key Concepts
+
+### 1. Three Core Traits
+- **Domain**: Full entity with CRUD operations (#[derive(Domain)])
+- **Selectable**: Projection for custom return types (#[derive(Selectable)])
+- **Creatable**: DTO for inserts (#[derive(Creatable)])
+
+### 2. Type-Safe Field Access
+Every Domain generates a COLUMNS constant with typed fields:
+```rust
+User::COLUMNS.id     // Field<i32>
+User::COLUMNS.name   // Field<String>
+User::COLUMNS.email  // Field<String>
+```
+
+### 3. Query Builder Pattern
+```rust
+User::select()
+    .filter(User::COLUMNS.age.gt(18) & User::COLUMNS.active.eq(true))
+    .order_by(User::COLUMNS.created_at.desc())
+    .limit(10)
+    .offset(20)
+    .all(&pool)
+    .await?;
+```
+
+### 4. Expression Operators
+- Comparison: `.eq()`, `.ne()`, `.gt()`, `.lt()`, `.gte()`, `.lte()`
+- Pattern: `.like("pattern%")`
+- Null checks: `.is_null()`, `.is_not_null()`
+- List: `.in_list(vec![1, 2, 3])`
+- Range: `.between(start, end)`
+- Logical: `&` (AND), `|` (OR)
+
+### 5. Custom Return Types
+```rust
+#[derive(Selectable)]
+pub struct UserSummary {
+    pub id: i32,
+    pub name: String,
+}
+
+let summaries = User::select()
+    .returning::<UserSummary>()
+    .all(&pool)
+    .await?;
+```
+
+### 6. Batch Operations
+```rust
+let ids = User::insert_many(vec![
+    CreateUser { name: "Alice".into(), email: "alice@example.com".into() },
+    CreateUser { name: "Bob".into(), email: "bob@example.com".into() },
+])
+.returning_pk(&pool)
+.await?;
+```
+
+### 7. Transactions
+```rust
+let mut conn = pool.get().await?;
+let tx = conn.begin().await?;
+
+// All operations use &tx instead of &pool
+let user_id = CreateUser { ... }.insert::<User>().returning_pk(&tx).await?;
+User::update()
+    .set(User::COLUMNS.verified, true)
+    .filter(User::COLUMNS.id.eq(user_id))
+    .execute(&tx)
+    .await?;
+
+tx.commit().await?;
+```
+
+### 8. Migrations
+```rust
+use conservator::migrate::Migrator;
+
+let migrator = Migrator::from_path("./migrations")?;
+let mut conn = pool.get().await?;
+migrator.run(&mut conn).await?;
+```
+
+Migration files: `migrations/001_initial.sql`, `002_add_users.sql`, etc.
+
+## Common Patterns
+
+### Find or Create
+```rust
+let user = User::select()
+    .filter(User::COLUMNS.email.eq(&email))
+    .optional(&pool)
+    .await?;
+
+let user = match user {
+    Some(u) => u,
+    None => {
+        let id = CreateUser { email, name }.insert::<User>()
+            .returning_pk(&pool)
+            .await?;
+        User::fetch_one_by_pk(&id, &pool).await?
+    }
+};
+```
+
+### Pagination
+```rust
+const PAGE_SIZE: i64 = 20;
+
+let page = 3;
+let users = User::select()
+    .order_by(User::COLUMNS.created_at.desc())
+    .limit(PAGE_SIZE)
+    .offset(PAGE_SIZE * (page - 1))
+    .all(&pool)
+    .await?;
+```
+
+### Count & Exists
+```rust
+let count = User::select()
+    .filter(User::COLUMNS.active.eq(true))
+    .count(&pool)
+    .await?;
+
+let exists = User::select()
+    .filter(User::COLUMNS.email.eq("test@example.com"))
+    .exists(&pool)
+    .await?;
+```
+
+### Complex Filters
+```rust
+use conservator::expression::Expr;
+
+let complex_filter = (User::COLUMNS.age.gte(18) & User::COLUMNS.age.lte(65))
+    | User::COLUMNS.role.eq("admin");
+
+let users = User::select()
+    .filter(complex_filter)
+    .all(&pool)
+    .await?;
+```
+
+### DISTINCT ON (PostgreSQL-specific)
+```rust
+// Get latest post per author
+Post::select()
+    .distinct_on(vec![Post::COLUMNS.author_id])
+    .order_by(Post::COLUMNS.author_id.asc())
+    .order_by(Post::COLUMNS.created_at.desc())
+    .all(&pool)
+    .await?;
+```
+
+## Supported Types
+
+| Rust Type | PostgreSQL Type | Notes |
+|-----------|-----------------|-------|
+| i8, i16, i32, i64 | SMALLINT, INTEGER, BIGINT | |
+| f32, f64 | REAL, DOUBLE PRECISION | |
+| bool | BOOLEAN | |
+| String | TEXT, VARCHAR | |
+| Vec<u8> | BYTEA | Binary data |
+| Vec<T> | Array types | T must be SqlType |
+| uuid::Uuid | UUID | Requires uuid feature |
+| chrono::DateTime | TIMESTAMPTZ | Requires chrono feature |
+| rust_decimal::Decimal | NUMERIC | Requires decimal feature |
+| serde_json::Value | JSONB | Requires serde_json feature |
+| Option<T> | Nullable | T must be SqlType |
+
+## Custom Types
+
+Implement SqlType trait for custom PostgreSQL types:
+
+```rust
+use conservator::{SqlType, SqlTypeWrapper};
+use tokio_postgres::types::{Type, IsNull, to_sql_checked};
+use bytes::BytesMut;
+
+struct MyCustomType { ... }
+
+impl SqlType for MyCustomType {
+    fn to_sql_value(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        // Serialize to PostgreSQL format
+    }
+
+    fn from_sql_value(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        // Deserialize from PostgreSQL format
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        // Check if this type can handle the PostgreSQL type
+        matches!(ty, &Type::TEXT | &Type::VARCHAR)
+    }
+}
+```
+
+## Safety Features
+
+### Type-State Pattern
+Update and Delete builders use type-state pattern to prevent SQL injection and accidental full-table operations:
+
+```rust
+// Won't compile - must call .set() and .filter()
+User::update().execute(&pool);  // ❌ Compile error
+
+// Won't compile - must call .filter()
+User::delete().execute(&pool);  // ❌ Compile error
+
+// Correct usage
+User::update()
+    .set(User::COLUMNS.name, "Alice".to_string())  // Required
+    .filter(User::COLUMNS.id.eq(1))                 // Required
+    .execute(&pool);  // ✅ Compiles
+```
+
+### Compile-Time Validation
+- Field types are checked at compile time
+- Table and column names are validated
+- Return types match query projections
+
+## Error Handling
+
+```rust
+use conservator::Error;
+
+match User::fetch_one_by_pk(&999, &pool).await {
+    Ok(user) => println!("Found: {:?}", user),
+    Err(Error::TooManyRows(0)) => println!("User not found"),
+    Err(e) => eprintln!("Database error: {}", e),
+}
+```
+
+## Performance Tips
+
+1. **Use Connection Pools**: Reuse connections for better performance
+2. **Batch Inserts**: Use `insert_many()` for multiple records
+3. **Custom Projections**: Use `Selectable` types to fetch only needed columns
+4. **Prepared Statements**: Automatically handled by tokio-postgres
+5. **Transactions**: Group related operations in transactions
+
+## Common Issues & Solutions
+
+### Issue: "Too many connections"
+**Solution**: Use connection pool with appropriate size:
+```rust
+let config = PoolConfig::new(20);  // Max 20 connections
+let pool = PooledConnection::from_config("postgres://...", config).await?;
+```
+
+### Issue: Custom type not working
+**Solution**: Implement SqlType trait and ensure `accepts()` returns true for your PostgreSQL type
+
+### Issue: Migration checksum mismatch
+**Solution**: Migration files cannot be modified after being applied. Create a new migration for changes.
+
+## Dependencies Required
+
+Add to Cargo.toml:
+```toml
+[dependencies]
+conservator = "0.2"
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+
+# Optional, based on your needs:
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+serde_json = "1"
+rust_decimal = "1"
+```
+
+## Testing with Conservator
+
+```rust
+#[cfg(test)]
+mod tests {
+    use conservator::PooledConnection;
+    use testcontainers::*;
+
+    #[tokio::test]
+    async fn test_user_crud() {
+        // Use testcontainers for isolated PostgreSQL
+        let docker = clients::Cli::default();
+        let postgres = docker.run(images::postgres::Postgres::default());
+
+        let pool = PooledConnection::from_url(&postgres.connection_string()).await.unwrap();
+
+        // Run migrations
+        Migrator::from_path("./migrations").unwrap()
+            .run(&mut pool.get().await.unwrap())
+            .await.unwrap();
+
+        // Your tests here
+    }
+}
+```
+
+## When to Use Conservator
+
+✅ **Good for:**
+- Type-safe PostgreSQL applications
+- Projects valuing compile-time safety
+- Async/await Rust services
+- Applications needing fine-grained SQL control
+- Teams preferring explicit over magic
+
+❌ **Not ideal for:**
+- Multi-database support needed
+- NoSQL databases
+- Projects requiring complex ORM features (lazy loading, cascades)
+- Quick prototypes where type safety isn't priority
+
+## Getting Help
+
+- Check integration tests in `tests/` for examples
+- Review the fail tests in `tests/fail/` for what NOT to do
+- Type definitions in `src/value.rs` for custom types
+- Migration examples in `src/migrate.rs`
+
+## Philosophy
+
+Conservator follows "Slow is Fast" principle:
+- Correctness over convenience
+- Explicit over implicit
+- Compile-time validation over runtime checks
+- Clear abstractions over magic
