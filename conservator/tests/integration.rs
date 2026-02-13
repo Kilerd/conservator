@@ -18,3 +18,6 @@ mod query_functions;
 
 #[path = "integration/vector_types_simple.rs"]
 mod vector_types_simple;
+
+#[path = "integration/text_enum.rs"]
+mod text_enum;

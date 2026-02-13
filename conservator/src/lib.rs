@@ -2,7 +2,7 @@
 extern crate self as conservator;
 
 use async_trait::async_trait;
-pub use conservator_macro::{Creatable, Domain, Selectable, sql};
+pub use conservator_macro::{Creatable, Domain, Selectable, TextEnum, sql};
 
 // Re-export tokio_postgres types used by macros
 pub use tokio_postgres::Row;
